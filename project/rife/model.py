@@ -11,6 +11,7 @@
 
 import os
 import torch
+from rife.rife import RIFE
 
 def model_load(model, path):
     """Load model."""
@@ -84,6 +85,6 @@ def model_setenv():
 if __name__ == '__main__':
     """Test model ..."""
 
-    model = get_model()
+    model = RIFE()
     print(model)
 

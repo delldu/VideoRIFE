@@ -245,19 +245,21 @@ class FlowModel(nn.Module):
         self.block3 = FlowBlock(8, scale=1, c=48)
 
     def forward(self, x):
+        img0 = x[:, :3]
+        img1 = x[:, 3:]
         x = F.interpolate(x, scale_factor=0.5, mode="bilinear", align_corners=False)
         flow0 = self.block0(x)
         F1 = flow0
-        warped_img0 = warp(x[:, :3], F1)
-        warped_img1 = warp(x[:, 3:], -F1)
+        warped_img0 = warp(img0, F1)
+        warped_img1 = warp(img1 -F1)
         flow1 = self.block1(torch.cat((warped_img0, warped_img1, F1), 1))
         F2 = (flow0 + flow1)
-        warped_img0 = warp(x[:, :3], F2)
-        warped_img1 = warp(x[:, 3:], -F2)
+        warped_img0 = warp(img0, F2)
+        warped_img1 = warp(img1, -F2)
         flow2 = self.block2(torch.cat((warped_img0, warped_img1, F2), 1))
         F3 = (flow0 + flow1 + flow2)
-        warped_img0 = warp(x[:, :3], F3)
-        warped_img1 = warp(x[:, 3:], -F3)
+        warped_img0 = warp(img0, F3)
+        warped_img1 = warp(img1, -F3)
         flow3 = self.block3(torch.cat((warped_img0, warped_img1, F3), 1))
         F4 = (flow0 + flow1 + flow2 + flow3)
         return F4, [F1, F2, F3, F4]
