@@ -18,13 +18,13 @@ from rife.rife import RIFE
 from rife.data import Video
 
 if __name__ == "__main__":
-    """Predict."""
+    """Demo."""
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', type=str, default="demo", help="input image")
     parser.add_argument(
         '--output', type=str, default="output", help="output video folder")
-    parser.add_argument("--exp", type=int, default=2,
+    parser.add_argument("--exp", type=int, default=4,
                         help='Increase the frames by 2**N. Example exp=1 ==> 2x frames, exp=2, means 4x')
     args = parser.parse_args()
 
@@ -57,16 +57,3 @@ if __name__ == "__main__":
             oldimg = seqence[i][:, :, 0:video.height, 0:video.width]
             toimage(oldimg.squeeze()).save("{}/{:06d}.png".format(args.output, count))
             count += 1
-
-        # # Save orignal frame
-        # oldimg = frame0[:, :, 0:video.height, 0:video.width]
-        # toimage(oldimg.squeeze()).save("{}/{:06d}.png".format(args.output, count))
-        # count += 1
-
-        # with torch.no_grad():
-        #     predict = model(frame0, frame1).cpu()
-
-        # # Save predict frame
-        # newimg = predict[:, :, 0:video.height, 0:video.width]
-        # toimage(newimg.squeeze()).save("{}/{:06d}.png".format(args.output, count))
-        # count += 1

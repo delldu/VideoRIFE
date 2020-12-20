@@ -31,3 +31,8 @@ Default is **YES**.
 `python demo.py --help`
 
 
+### 3. Demo
+
+`python demo.py`
+
+`ffmpeg -i output/%6d.png -r 4 demo.gif`
