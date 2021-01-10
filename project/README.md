@@ -17,17 +17,7 @@ RIFE version (0.0.1).
 
 `torchvision: 0.6.1`
 
-#### 2.2 Env
-
-`export USE_ONLY_CPU=YES | NO`
-
-Default is **NO**, use **GPU** with high priority.
-
-`export ENABLE_APEX=YES | NO`
-
-Default is **YES**.
-
-#### 2.3 Run
+#### 2.2 Run
 `python demo.py --help`
 
 

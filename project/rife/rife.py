@@ -322,7 +322,6 @@ class ContextModel(nn.Module):
         self.conv2 = ResBlock(c, 2*c)
         self.conv3 = ResBlock(2*c, 4*c)
         self.conv4 = ResBlock(4*c, 8*c)
-        # pdb.set_trace()
 
     def forward(self, x, flow):
         # pdb.set_trace()
@@ -370,7 +369,6 @@ class FusionModel(nn.Module):
         self.up3 = deconv(4*c, c)
         self.conv = nn.Conv2d(c, 16, 3, 1, 1)
         self.up4 = nn.PixelShuffle(2)
-        # pdb.set_trace()
 
     def forward(self, img0, img1, flow, c0, c1, flow_gt):
         # (Pdb) img0.size()
