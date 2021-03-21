@@ -35,7 +35,6 @@ class RIFE(nn.Module):
         img0 = imgs[0:1]
         img1 = imgs[1:2]
         # flow([1, 6, 2176, 3840])
-        # pdb.set_trace()
 
         flow = self.flow(torch.cat([img0, img1], dim=1))
 
@@ -59,21 +58,6 @@ class RIFE(nn.Module):
 
         return torch.clamp(pred, 0, 1)
 
-
-    def slow(self, img1, img2, exp):
-        scale = (2 ** exp)
-        seq = [None] * (scale + 1)
-        seq[0] = img1.cpu()
-        seq[scale] = img2.cpu()
-        skip = scale
-        while skip > 0:
-            for start in range(0, scale, skip):
-                stop = start + skip
-                with torch.no_grad():
-                    mid = self.forward(seq[start], seq[stop])
-                seq[(start + stop)//2] = mid.cpu()
-            skip = skip // 2
-        return seq
 
 backwarp_tensor_grid = {}
 def warp(image_tensor, flow_tensor):
