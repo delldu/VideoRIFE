@@ -59,29 +59,55 @@ class RIFE(nn.Module):
         return torch.clamp(pred, 0, 1)
 
 
-backwarp_tensor_grid = {}
+# backwarp_tensor_grid = {}
+# def warp(image_tensor, flow_tensor):
+#     k = (str(flow_tensor.device), str(flow_tensor.size()))
+#     # pdb.set_trace()
+#     # (Pdb) image_tensor.size(), flow_tensor.size()
+#     # (torch.Size([1, 3, 1088, 1920]), torch.Size([1, 2, 1088, 1920]))
+#     # (Pdb) k
+#     # ('cuda:0', 'torch.Size([1, 2, 1088, 1920])')
+#     B = image_tensor.shape[0]
+#     H = image_tensor.shape[2]
+#     W = image_tensor.shape[3]
+
+#     # assert image_tensor.shape[2] == flow_tensor.shape[2]
+#     # assert image_tensor.shape[3] == flow_tensor.shape[3]
+
+#     if k not in backwarp_tensor_grid:
+#         tenHorizontal = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
+#         tenVertical = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
+#         backwarp_tensor_grid[k] = torch.cat([tenHorizontal, tenVertical], 1).to(flow_tensor.device)
+
+#     flow_tensor = torch.cat([flow_tensor[:, 0:1, :, :] / ((W - 1.0) / 2.0),
+#                          flow_tensor[:, 1:2, :, :] / ((H - 1.0) / 2.0)], 1)
+#     g = (backwarp_tensor_grid[k] + flow_tensor).permute(0, 2, 3, 1)
+#     # pdb.set_trace()
+#     # (Pdb) backwarp_tensor_grid[k].size()
+#     # torch.Size([1, 2, 1088, 1920]), range [-1.0, 1.0]    
+#     # (Pdb) flow_tensor.size()
+#     # torch.Size([1, 2, 1088, 1920])
+#     # (Pdb) g.size()
+#     # torch.Size([1, 1088, 1920, 2])
+
+#     return F.grid_sample(input=image_tensor, grid=torch.clamp(g, -1, 1), mode='bilinear', padding_mode='zeros', align_corners=True)
+
+@torch.jit.script
 def warp(image_tensor, flow_tensor):
-    k = (str(flow_tensor.device), str(flow_tensor.size()))
-    # pdb.set_trace()
-    # (Pdb) image_tensor.size(), flow_tensor.size()
-    # (torch.Size([1, 3, 1088, 1920]), torch.Size([1, 2, 1088, 1920]))
-    # (Pdb) k
-    # ('cuda:0', 'torch.Size([1, 2, 1088, 1920])')
     B = image_tensor.shape[0]
     H = image_tensor.shape[2]
     W = image_tensor.shape[3]
 
-    assert image_tensor.shape[2] == flow_tensor.shape[2]
-    assert image_tensor.shape[3] == flow_tensor.shape[3]
+    # assert image_tensor.shape[2] == flow_tensor.shape[2]
+    # assert image_tensor.shape[3] == flow_tensor.shape[3]
 
-    if k not in backwarp_tensor_grid:
-        tenHorizontal = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
-        tenVertical = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
-        backwarp_tensor_grid[k] = torch.cat([tenHorizontal, tenVertical], 1).to(flow_tensor.device)
+    tenHorizontal = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
+    tenVertical = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
+    backwarp_tensor_grid = torch.cat([tenHorizontal, tenVertical], 1).to(flow_tensor.device)
 
     flow_tensor = torch.cat([flow_tensor[:, 0:1, :, :] / ((W - 1.0) / 2.0),
                          flow_tensor[:, 1:2, :, :] / ((H - 1.0) / 2.0)], 1)
-    g = (backwarp_tensor_grid[k] + flow_tensor).permute(0, 2, 3, 1)
+    g = (backwarp_tensor_grid + flow_tensor).permute(0, 2, 3, 1)
     # pdb.set_trace()
     # (Pdb) backwarp_tensor_grid[k].size()
     # torch.Size([1, 2, 1088, 1920]), range [-1.0, 1.0]    
@@ -91,6 +117,7 @@ def warp(image_tensor, flow_tensor):
     # torch.Size([1, 1088, 1920, 2])
 
     return F.grid_sample(input=image_tensor, grid=torch.clamp(g, -1, 1), mode='bilinear', padding_mode='zeros', align_corners=True)
+
 
 def flow_conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
