@@ -249,19 +249,24 @@ class FlowModel(nn.Module):
         img1 = x[:, 3:]
         x = F.interpolate(x, scale_factor=0.5, mode="bilinear", align_corners=False)
         flow0 = self.block0(x)
+
         F1 = flow0
         warped_img0 = warp(img0, F1)
         warped_img1 = warp(img1 -F1)
         flow1 = self.block1(torch.cat((warped_img0, warped_img1, F1), 1))
+
         F2 = (flow0 + flow1)
         warped_img0 = warp(img0, F2)
         warped_img1 = warp(img1, -F2)
         flow2 = self.block2(torch.cat((warped_img0, warped_img1, F2), 1))
+
         F3 = (flow0 + flow1 + flow2)
         warped_img0 = warp(img0, F3)
         warped_img1 = warp(img1, -F3)
         flow3 = self.block3(torch.cat((warped_img0, warped_img1, F3), 1))
+
         F4 = (flow0 + flow1 + flow2 + flow3)
+        
         return F4, [F1, F2, F3, F4]
 
 
@@ -328,20 +333,19 @@ class ContextModel(nn.Module):
         # (torch.Size([1, 3, 2176, 3840]), torch.Size([1, 2, 1088, 1920]))
         x = self.conv0(x)
         x = self.conv1(x)
-        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-            align_corners=False) * 0.5
+        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False) * 0.5
         f1 = warp(x, flow)
+        
         x = self.conv2(x)
-        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False) * 0.5
         f2 = warp(x, flow)
+
         x = self.conv3(x)
-        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False) * 0.5
         f3 = warp(x, flow)
+
         x = self.conv4(x)
-        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear",
-                             align_corners=False) * 0.5
+        flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False) * 0.5
         f4 = warp(x, flow)
         # pdb.set_trace()
         # (Pdb) f1.size(), f2.size(), f3.size(), f4.size()
