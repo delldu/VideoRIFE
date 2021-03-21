@@ -11,29 +11,49 @@
 
 import os
 import torch
-from rife.rife import RIFE
+from model_helper import RIFE
 
 def model_load(model, path):
     """Load model."""
 
+    def single_model_load(model, path):
+        if not os.path.exists(path):
+            print("Model '{}' does not exist.".format(path))
+            return
+
+        state_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        target_state_dict = model.state_dict()
+        for n, p in state_dict.items():
+            n = n.replace("module.", "")
+            if n in target_state_dict.keys():
+                target_state_dict[n].copy_(p)
+            else:
+                raise KeyError(n)
+
     if not os.path.exists(path):
-        print("Model '{}' does not exist.".format(path))
-        return
+        single_model_load(model.flow, "models/Flow.pth")
+        single_model_load(model.context, "models/Context.pth")
+        single_model_load(model.fusion, "models/Fusion.pth")
+        model_save(model, path)
+    else:
+        single_model_load(model, path)
 
-    state_dict = torch.load(path, map_location=lambda storage, loc: storage)
-    target_state_dict = model.state_dict()
-    for n, p in state_dict.items():
-        n = n.replace("module.", "")
-        if n in target_state_dict.keys():
-            target_state_dict[n].copy_(p)
-        else:
-            raise KeyError(n)
 
+def get_model(checkpoint):
+    """Create model."""
+
+    model_setenv()
+    model = RIFE()
+    model_load(model, checkpoint)
+    device = model_device()
+    model.to(device)
+
+    return model
 
 def model_save(model, path):
     """Save model."""
 
-    torch.save(self.model.state_dict(), path)
+    torch.save(model.state_dict(), path)
 
 def model_device():
     """Please call after model_setenv. """
@@ -64,6 +84,6 @@ def model_setenv():
 if __name__ == '__main__':
     """Test model ..."""
 
-    model = RIFE()
+    model = get_model("models/VideoRIFE.pth")
     print(model)
 

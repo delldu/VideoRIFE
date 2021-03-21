@@ -8,23 +8,13 @@
 # ***
 # ************************************************************************************/
 #
-import inspect
 import os
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .model import model_device, model_load, model_setenv, model_save
-
 import pdb
-
-import warnings
-warnings.filterwarnings("ignore")
-
-def abs_weight_file(funcname, filename):
-    dir = os.path.dirname(inspect.getfile(funcname))
-    return os.path.join(dir, 'weights/%s' % (filename))
 
 class RIFE(nn.Module):
     """RIFE."""
@@ -33,82 +23,42 @@ class RIFE(nn.Module):
         """Init model."""
         super(RIFE, self).__init__()
 
-        model_setenv()
+        self.flow = FlowModel()
+        self.context = ContextModel()
+        self.fusion = FusionModel()
 
-        flow = FlowModel()
-        context = ContextModel()
-        fusion = FusionModel()
 
-        model_load(flow, abs_weight_file(self.__init__, "Flow.pth"))
-        model_load(context, abs_weight_file(self.__init__, "Context.pth"))
-        model_load(fusion, abs_weight_file(self.__init__, "Fusion.pth"))
-
-        self.device = model_device()
-        self.flow = flow.to(self.device)
-        self.context = context.to(self.device)
-        self.fusion = fusion.to(self.device)
-
-    def train(self):
-        self.flow.train()
-        self.context.train()
-        self.fusion.train()
-
-    def eval(self):
-        self.flow.eval()
-        self.context.eval()
-        self.fusion.eval()
-
-    def save(self):
-        '''Save models. '''
-        outputdir = "output"
-        if not os.path.exists(outputdir):
-            os.makedirs(outputdir)
-        model_save(self.flow, "{}/Flow.pth".format(outputdir))
-        model_save(self.context, "{}/Context.pth".format(outputdir))
-        model_save(self.fusion, "{}/Fusion.pth".format(outputdir))
-
-    def forward(self, img1, img2):
+    def forward(self, imgs):
         """Forward."""
-        imgs = torch.cat((img1, img2), 1)
-        imgs = imgs.to(self.device)
-
-        flow, _ = self.flow(imgs)
-        # pdb.set_trace()
         # (Pdb) imgs.size()
-        # torch.Size([1, 6, 2176, 3840])
-        # (Pdb) imgs.mean()
-        # tensor(0.2947, device='cuda:0')
+        # torch.Size([2, 3, 2176, 3840])
+        img0 = imgs[0:1]
+        img1 = imgs[1:2]
+        # flow([1, 6, 2176, 3840])
+        # pdb.set_trace()
+
+        flow = self.flow(torch.cat([img0, img1], dim=1))
 
         # (Pdb) flow.size(), flow.mean(), flow.min(), flow.max()
         # (torch.Size([1, 2, 1088, 1920]), tensor(-0.3612, device='cuda:0'), 
         # tensor(-2.2808, device='cuda:0'), tensor(1.3152, device='cuda:0'))
-
-        # (Pdb) self.predict(imgs, flow).size()
-        # torch.Size([1, 3, 2176, 3840])
-
-        return self.predict(imgs, flow)
-
-    def predict(self, imgs, flow, training=True, flow_gt=None):
-        img0 = imgs[:, :3]
-        img1 = imgs[:, 3:]
 
         c0 = self.context(img0, flow)
         c1 = self.context(img1, -flow)
 
         # why flow must be multi * 2.0 ?
         flow = F.interpolate(flow, scale_factor=2.0, mode="bilinear", align_corners=False) * 2.0
-        refine_output, warped_img0, warped_img1, warped_img0_gt, warped_img1_gt = \
-            self.fusion(img0, img1, flow, c0, c1, flow_gt)
 
+        refine_output, warped_img0, warped_img1 = self.fusion(img0, img1, flow, c0, c1)
         res = torch.sigmoid(refine_output[:, :3]) * 2 - 1
         mask = torch.sigmoid(refine_output[:, 3:4])
-        merged_img = warped_img0 * mask + warped_img1 * (1 - mask)
-        pred = merged_img + res
+        pred = warped_img0 * mask + warped_img1 * (1 - mask) + res
 
-        del c0, c1, flow, refine_output, warped_img0, warped_img1, res, mask, merged_img
+        del c0, c1, flow, refine_output, warped_img0, warped_img1, res, mask
         torch.cuda.empty_cache()
 
         return torch.clamp(pred, 0, 1)
+
 
     def slow(self, img1, img2, exp):
         scale = (2 ** exp)
@@ -245,14 +195,15 @@ class FlowModel(nn.Module):
         self.block3 = FlowBlock(8, scale=1, c=48)
 
     def forward(self, x):
+        x = F.interpolate(x, scale_factor=0.5, mode="bilinear", align_corners=False)
+
         img0 = x[:, :3]
         img1 = x[:, 3:]
-        x = F.interpolate(x, scale_factor=0.5, mode="bilinear", align_corners=False)
         flow0 = self.block0(x)
 
         F1 = flow0
         warped_img0 = warp(img0, F1)
-        warped_img1 = warp(img1 -F1)
+        warped_img1 = warp(img1, -F1)
         flow1 = self.block1(torch.cat((warped_img0, warped_img1, F1), 1))
 
         F2 = (flow0 + flow1)
@@ -267,7 +218,7 @@ class FlowModel(nn.Module):
 
         F4 = (flow0 + flow1 + flow2 + flow3)
         
-        return F4, [F1, F2, F3, F4]
+        return F4
 
 
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
@@ -374,15 +325,13 @@ class FusionModel(nn.Module):
         self.conv = nn.Conv2d(c, 16, 3, 1, 1)
         self.up4 = nn.PixelShuffle(2)
 
-    def forward(self, img0, img1, flow, c0, c1, flow_gt):
+    def forward(self, img0, img1, flow, c0, c1):
         # (Pdb) img0.size()
         # torch.Size([1, 3, 2176, 3840])
         # (Pdb) img1.size()
         # torch.Size([1, 3, 2176, 3840])
         # (Pdb) flow.size()
         # torch.Size([1, 2, 2176, 3840])
-        # (Pdb) flow_gt is None
-        # True
         # len(c0), len(c1) --> (4, 4)
         # (Pdb) c0[0].size(), c0[1].size(), c0[2].size(), c0[3].size()
         # (torch.Size([1, 32, 544, 960]), 
@@ -392,11 +341,6 @@ class FusionModel(nn.Module):
 
         warped_img0 = warp(img0, flow)
         warped_img1 = warp(img1, -flow)
-        if flow_gt == None:
-            warped_img0_gt, warped_img1_gt = None, None
-        else:
-            warped_img0_gt = warp(img0, flow_gt[:, :2])
-            warped_img1_gt = warp(img1, flow_gt[:, 2:4])
         x = self.conv0(torch.cat((warped_img0, warped_img1, flow), 1))
         # (Pdb) xxx=torch.cat((warped_img0, warped_img1, flow), 1)
         # (Pdb) xxx.size()
@@ -414,12 +358,10 @@ class FusionModel(nn.Module):
         x = self.up3(torch.cat((x, s0), 1))
         x = self.up4(self.conv(x))
         # pdb.set_trace()
-        # (Pdb) warped_img0_gt is None
-        # True
         # (Pdb) warped_img0.size()
         # torch.Size([1, 3, 2176, 3840])
         # x.size()
         # torch.Size([1, 4, 2176, 3840])
 
-        return x, warped_img0, warped_img1, warped_img0_gt, warped_img1_gt
+        return x, warped_img0, warped_img1 
 
