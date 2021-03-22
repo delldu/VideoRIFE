@@ -23,6 +23,5 @@ RIFE version (0.0.1).
 
 ### 3. Demo
 
-`python demo.py`
+`python predict.py`
 
-`ffmpeg -i output/%6d.png -r 4 demo.gif`
