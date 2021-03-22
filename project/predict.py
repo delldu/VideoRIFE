@@ -35,6 +35,7 @@ if __name__ == "__main__":
 
     model = get_model(args.checkpoint)
     device = model_device()
+    model = model.to(device)
     model.eval()
 
     video = Video()
@@ -50,8 +51,6 @@ if __name__ == "__main__":
 
         # videos format: TxCxHxW, Here T = 2
         frames = video[index]
-        # frame0 = frames[0:1]
-        # frame1 = frames[1:2]
         frames = frames.to(device)
 
         seqence = model(frames).squeeze()

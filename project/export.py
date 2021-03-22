@@ -13,11 +13,9 @@ def export_torch_model():
     model = get_model(weight_file)
     model.eval()
 
-    device = model_device()
-
     # 2. Model export
     print("Export model ...")
-    input = torch.randn(2, 3, 512, 512).to(device)
+    input = torch.randn(2, 3, 512, 512)
 
     traced_script_module = torch.jit.trace(model, input)
     traced_script_module.save(script_file)

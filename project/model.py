@@ -45,8 +45,6 @@ def get_model(checkpoint):
     model_setenv()
     model = RIFE()
     model_load(model, checkpoint)
-    device = model_device()
-    model.to(device)
 
     return model
 
