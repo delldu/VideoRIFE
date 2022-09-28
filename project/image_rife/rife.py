@@ -37,6 +37,10 @@ def warp(input, flow, backwarp_grid):
     return F.grid_sample(input=input, grid=g, mode="bilinear", padding_mode="border", align_corners=True)
 
 
+def resize(x, scale: float):
+    return F.interpolate(x, scale_factor=scale, mode="bilinear", align_corners=False, recompute_scale_factor=False)
+
+
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(
@@ -69,16 +73,8 @@ class IFBlock(nn.Module):
         )
 
     def forward(self, x, flow, scale: float) -> List[torch.Tensor]:
-        x = F.interpolate(
-            x, scale_factor=1.0 / scale, mode="bilinear", align_corners=False, recompute_scale_factor=False
-        )
-        flow = (
-            F.interpolate(
-                flow, scale_factor=1.0 / scale, mode="bilinear", align_corners=False, recompute_scale_factor=False
-            )
-            * 1.0
-            / scale
-        )
+        x = resize(x, 1.0 / scale)
+        flow = resize(flow, 1.0 / scale) * 1.0 / scale
         feat = self.conv0(torch.cat((x, flow), dim=1))
         feat = self.convblock0(feat) + feat
         feat = self.convblock1(feat) + feat
@@ -86,13 +82,8 @@ class IFBlock(nn.Module):
         feat = self.convblock3(feat) + feat
         flow = self.conv1(feat)
         mask = self.conv2(feat)
-        flow = (
-            F.interpolate(flow, scale_factor=scale, mode="bilinear", align_corners=False, recompute_scale_factor=False)
-            * scale
-        )
-        mask = F.interpolate(
-            mask, scale_factor=scale, mode="bilinear", align_corners=False, recompute_scale_factor=False
-        )
+        flow = resize(flow, scale) * scale
+        mask = resize(mask, scale)
         return flow, mask
 
 
@@ -120,7 +111,6 @@ class IFNet(nn.Module):
         grid = standard_flow_grid(flow[:, :2])
 
         scale_list = [4.0, 2.0, 1.0]
-
         for i, block in enumerate(self.blocks):
             t0 = torch.cat((warped_img0, warped_img1, mask), dim=1)
             t1 = torch.cat((warped_img1, warped_img0, -mask), dim=1)
