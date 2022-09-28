@@ -12,7 +12,6 @@
 __version__ = "1.0.0"
 
 import os
-import time
 from tqdm import tqdm
 import torch
 
@@ -46,7 +45,7 @@ def get_model():
     return model, device
 
 
-def model_forward(model, device, input_tensor, multi_times=1):
+def model_forward(model, device, input_tensor, multi_times=8):
     # zeropad for model
     H, W = input_tensor.size(2), input_tensor.size(3)
     if H % multi_times != 0 or W % multi_times != 0:
@@ -60,36 +59,22 @@ def model_forward(model, device, input_tensor, multi_times=1):
     return output_tensor[:, :, 0:H, 0:W]
 
 
-def image_client(name, input_files, output_dir):
-    redo = redos.Redos(name)
-    cmd = redos.image.Command()
-    image_filenames = todos.data.load_files(input_files)
-    for filename in image_filenames:
-        output_file = f"{output_dir}/{os.path.basename(filename)}"
-        context = cmd.rife(filename, output_file)
-        redo.set_queue_task(context)
-    print(f"Created {len(image_filenames)} tasks for {name}.")
+def model_forward_times(model, device, i1, i2, slow_times=1):
+    inputs = [i1, i2]
+    outputs = []
+    for n in range(slow_times):
+        outputs = []
+        outputs.append(inputs[0].cpu())
+        for i in range(len(inputs) - 1):
+            images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
+            middle = model_forward(model, device, images)
+            outputs.append(middle.cpu())
+            outputs.append(inputs[i + 1].cpu())
+        inputs = outputs  # for next time
+    return outputs
 
 
-def image_server(name, host="localhost", port=6379):
-    # load model
-    model, device = get_model()
-
-    def do_service(input_file, output_file, targ):
-        print(f"  rife {input_file} ...")
-        try:
-            input_tensor = todos.data.load_tensor(input_file)
-            output_tensor = model_forward(model, device, input_tensor)
-            todos.data.save_tensor(output_tensor, output_file)
-            return True
-        except Exception as e:
-            print("exception: ", e)
-            return False
-
-    return redos.image.service(name, "image_rife", do_service, host, port)
-
-
-def image_predict(input_files, output_dir):
+def image_predict(input_files, slow_times, output_dir):
     # Create directory to store result
     todos.data.mkdir(output_dir)
 
@@ -99,23 +84,31 @@ def image_predict(input_files, output_dir):
     # load files
     image_filenames = todos.data.load_files(input_files)
 
-    # start predict
+    # Start predict
     progress_bar = tqdm(total=len(image_filenames))
-    for filename in image_filenames:
+
+    OUTPUT_COUNT = 0
+    I1 = I2 = None
+    for i, filename in enumerate(image_filenames):
         progress_bar.update(1)
 
-        # orig input
         input_tensor = todos.data.load_tensor(filename)
+        if i == 0:
+            I1 = input_tensor
+            I2 = input_tensor
+        else:
+            I1 = I2
+            I2 = input_tensor
 
-        # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
-        orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor)
-        output_file = f"{output_dir}/{os.path.basename(filename)}"
+        outputs = model_forward_times(model, device, I1, I2, slow_times)
 
-        todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
+        for output_tensor in outputs[1:]:  # skip first
+            output_file = f"{output_dir}/{OUTPUT_COUNT + 1:06d}.png"
+            todos.data.save_tensor([output_tensor], output_file)
+            OUTPUT_COUNT = OUTPUT_COUNT + 1
 
 
-def video_service(input_file, output_file, targ):
+def video_predict(input_file, slow_times, output_file):
     # load video
     video = redos.video.Reader(input_file)
     if video.n_frames < 1:
@@ -132,7 +125,13 @@ def video_service(input_file, output_file, targ):
     print(f"  rife {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
 
+    global I1, I2, OUTPUT_COUNT
+    I1 = I2 = None
+    OUTPUT_COUNT = 0
+
     def rife_video_frame(no, data):
+        global I1, I2, OUTPUT_COUNT
+
         # print(f"frame: {no} -- {data.shape}")
         progress_bar.update(1)
 
@@ -140,30 +139,29 @@ def video_service(input_file, output_file, targ):
 
         # convert tensor from 1x4xHxW to 1x3xHxW
         input_tensor = input_tensor[:, 0:3, :, :]
-        output_tensor = model_forward(model, device, input_tensor)
 
-        temp_output_file = "{}/{:06d}.png".format(output_dir, no)
-        todos.data.save_tensor(output_tensor, temp_output_file)
+        if no == 0:
+            I1 = input_tensor
+            I2 = input_tensor
+        else:
+            I1 = I2
+            I2 = input_tensor
+
+        outputs = model_forward_times(model, device, I1, I2, slow_times)
+
+        for output_tensor in outputs[1:]:  # skip first
+            output_file = f"{output_dir}/{OUTPUT_COUNT + 1:06d}.png"
+            todos.data.save_tensor([output_tensor], output_file)
+            OUTPUT_COUNT = OUTPUT_COUNT + 1
 
     video.forward(callback=rife_video_frame)
 
     redos.video.encode(output_dir, output_file)
 
     # delete temp files
-    for i in range(video.n_frames):
-        temp_output_file = "{}/{:06d}.png".format(output_dir, i)
+    for i in range(OUTPUT_COUNT):
+        temp_output_file = "{}/{:06d}.png".format(output_dir, i + 1)
         os.remove(temp_output_file)
+    os.removedirs(output_dir)
 
     return True
-
-
-def video_client(name, input_file, output_file):
-    cmd = redos.video.Command()
-    context = cmd.rife(input_file, output_file)
-    redo = redos.Redos(name)
-    redo.set_queue_task(context)
-    print(f"Created 1 video tasks for {name}.")
-
-
-def video_server(name, host="localhost", port=6379):
-    return redos.video.service(name, "video_rife", video_service, host, port)

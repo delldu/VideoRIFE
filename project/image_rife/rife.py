@@ -19,6 +19,7 @@ import pdb
 
 # The following comes from RIFE_HDv3.py/IFNet_HDv3.py, thanks authors !!!
 
+
 def standard_flow_grid(flow):
     B, C, H, W = flow.shape
     hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
@@ -96,7 +97,7 @@ class IFBlock(nn.Module):
 
 
 class IFNet(nn.Module):
-    '''Intermediate Flow Network -- RIFE(Real-Time Intermediate Flow Estimation)'''
+    """Intermediate Flow Network -- RIFE(Real-Time Intermediate Flow Estimation)"""
 
     def __init__(self):
         super(IFNet, self).__init__()
@@ -109,14 +110,14 @@ class IFNet(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        img0 = x[:, :3, :, :]
-        img1 = x[:, 3:, :, :]
+        img0 = x[:, :3]
+        img1 = x[:, 3:]
 
         warped_img0 = img0
         warped_img1 = img1
         flow = torch.zeros((B, 4, H, W)).to(x.device)
         mask = torch.zeros((B, 1, H, W)).to(x.device)
-        grid = standard_flow_grid(flow[:, :2, :, :])
+        grid = standard_flow_grid(flow[:, :2])
 
         scale_list = [4.0, 2.0, 1.0]
 
@@ -125,15 +126,15 @@ class IFNet(nn.Module):
             t1 = torch.cat((warped_img1, warped_img0, -mask), dim=1)
 
             f0, m0 = block(t0, flow, scale_list[i])
-            flow_1 = torch.cat((flow[:, 2:4, :, :], flow[:, :2, :, :]), dim=1)
+            flow_1 = torch.cat((flow[:, 2:4], flow[:, :2]), dim=1)
             f1, m1 = block(t1, flow_1, scale_list[i])
-            f1 = torch.cat((f1[:, 2:4, :, :], f1[:, :2, :, :]), dim=1)
+            f1 = torch.cat((f1[:, 2:4], f1[:, :2]), dim=1)
 
             flow = flow + (f0 + f1) / 2.0
             mask = mask + (m0 + (-m1)) / 2.0
 
-            warped_img0 = warp(img0, flow[:, :2, :, :], grid)
-            warped_img1 = warp(img1, flow[:, 2:4, :, :], grid)
+            warped_img0 = warp(img0, flow[:, :2], grid)
+            warped_img1 = warp(img1, flow[:, 2:4], grid)
 
         mask = torch.sigmoid(mask)
         middle = warped_img0 * mask + warped_img0 * (1.0 - mask)
