@@ -13,7 +13,7 @@ install:
 	python setup.py install
 
 uninstall:
-	pip uninstall image_rife
+	pip uninstall video_slow
 
 clean:
-	rm -rf build dist image_rife.egg-info __pycache__
+	rm -rf build dist video_slow.egg-info __pycache__

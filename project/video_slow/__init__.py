@@ -1,4 +1,4 @@
-"""Image/Video RIFE Package."""  # coding=utf-8
+"""Image/Video Slow Package."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -25,7 +25,7 @@ import pdb
 def get_model():
     """Create model."""
 
-    model_path = "models/image_rife.pth"
+    model_path = "models/video_slow.pth"
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
@@ -39,8 +39,8 @@ def get_model():
     model = torch.jit.script(model)
 
     todos.data.mkdir("output")
-    if not os.path.exists("output/image_rife.torch"):
-        model.save("output/image_rife.torch")
+    if not os.path.exists("output/video_slow.torch"):
+        model.save("output/video_slow.torch")
 
     return model, device
 
@@ -87,8 +87,8 @@ def image_predict(input_files, slow_times, output_dir):
     # Start predict
     progress_bar = tqdm(total=len(image_filenames))
 
-    OUTPUT_COUNT = 0
     I1 = I2 = None
+    OUTPUT_COUNT = 0
     for i, filename in enumerate(image_filenames):
         progress_bar.update(1)
 
@@ -106,7 +106,7 @@ def image_predict(input_files, slow_times, output_dir):
             output_file = f"{output_dir}/{OUTPUT_COUNT + 1:06d}.png"
             todos.data.save_tensor([output_tensor], output_file)
             OUTPUT_COUNT = OUTPUT_COUNT + 1
-
+    todos.model.reset_device()
 
 def video_predict(input_file, slow_times, output_file):
     # load video
@@ -122,24 +122,21 @@ def video_predict(input_file, slow_times, output_file):
     # load model
     model, device = get_model()
 
-    print(f"  rife {input_file}, save to {output_file} ...")
+    print(f"  Slow down {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
 
     global I1, I2, OUTPUT_COUNT
     I1 = I2 = None
     OUTPUT_COUNT = 0
 
-    def rife_video_frame(no, data):
+    def slow_video_frame(no, data):
         global I1, I2, OUTPUT_COUNT
-
-        # print(f"frame: {no} -- {data.shape}")
         progress_bar.update(1)
 
         input_tensor = todos.data.frame_totensor(data)
 
         # convert tensor from 1x4xHxW to 1x3xHxW
         input_tensor = input_tensor[:, 0:3, :, :]
-
         if no == 0:
             I1 = input_tensor
             I2 = input_tensor
@@ -154,7 +151,7 @@ def video_predict(input_file, slow_times, output_file):
             todos.data.save_tensor([output_tensor], output_file)
             OUTPUT_COUNT = OUTPUT_COUNT + 1
 
-    video.forward(callback=rife_video_frame)
+    video.forward(callback=slow_video_frame)
 
     redos.video.encode(output_dir, output_file)
 
@@ -163,5 +160,6 @@ def video_predict(input_file, slow_times, output_file):
         temp_output_file = "{}/{:06d}.png".format(output_dir, i + 1)
         os.remove(temp_output_file)
     os.removedirs(output_dir)
+    todos.model.reset_device()
 
     return True

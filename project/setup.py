@@ -15,16 +15,16 @@ with open("README.md", "r") as file:
     long_description = file.read()
 
 setup(
-    name="image_rife",
+    name="video_slow",
     version="1.0.0",
     author="Dell Du",
     author_email="18588220928@163.com",
-    description="image/video rife package",
+    description="image/video slow package",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/delldu/DeepGuidedFilter.git",
-    packages=["image_rife"],
-    package_data={"image_rife": ["models/image_rife.pth"]},
+    url="https://github.com/delldu/VideoRIFE.git",
+    packages=["video_slow"],
+    package_data={"video_slow": ["models/video_slow.pth"]},
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",
