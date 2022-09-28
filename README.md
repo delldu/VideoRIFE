@@ -1,39 +1,47 @@
-# RIFE Video Frame Interpolation v1.6
-## [arXiv](https://arxiv.org/abs/2011.06294) | [Project Page](https://rife-vfi.github.io) | [Reddit](https://www.reddit.com/r/linux/comments/jy4jjl/opensourced_realtime_video_frame_interpolation/) | [YouTube](https://www.youtube.com/watch?v=60DX2T3zyVo&feature=youtu.be) | [Bilibili](https://www.bilibili.com/video/BV1K541157te?from=search&seid=5131698847373645765)
+# Real-Time Intermediate Flow Estimation for Video Frame Interpolation
+## Introduction
+This project is the implement of [Real-Time Intermediate Flow Estimation for Video Frame Interpolation](https://arxiv.org/abs/2011.06294). Currently, our model can run 30+FPS for 2X 720p interpolation on a 2080Ti GPU. It supports arbitrary-timestep interpolation between a pair of images. 
 
-**12.13 News: We have updated the v1.6 model and support UHD mode.**
+**2022.7.4 - Our paper is accepted by ECCV2022 🎉. Thanks to all relevant authors, contributors and users!**
 
-**12.5 News: We have optimized the inference code and got 20% speedup!**
+From 2020 to 2022, we submitted RIFE for five submissions（rejected by CVPR21 ICCV21 AAAI22 CVPR22). Thanks to all anonymous reviewers, your suggestions have helped to significantly improve the paper! 
 
-**12.3 News: We have updated the v1.5 model optimized for 1080p video. The performance improvement is incredible! Please check our [update log](https://github.com/hzwer/arXiv2020-RIFE/issues/41#issuecomment-737651979).**
+## [YouTube](https://www.youtube.com/results?search_query=rife+interpolation&sp=CAM%253D) | [BiliBili](https://search.bilibili.com/all?keyword=SVFI&order=stow&duration=0&tids_1=0) | [Colab](https://colab.research.google.com/github/hzwer/ECCV2022-RIFE/blob/main/Colab_demo.ipynb) | [Tutorial](https://www.youtube.com/watch?v=gf_on-dbwyU&feature=emb_title)
 
-**11.22 News: We notice a new windows app is trying to integrate RIFE, we hope everyone to try and help them improve. You can download [Flowframes](https://nmkd.itch.io/flowframes) for free.**
-
-**There is [a tutorial of RIFE](https://www.youtube.com/watch?v=gf_on-dbwyU&feature=emb_title) on Youtube.**
-
-**You can easily use [colaboratory](https://colab.research.google.com/github/hzwer/arXiv2020-RIFE/blob/main/Colab_demo.ipynb) to have a try and generate the [our youtube demo](https://www.youtube.com/watch?v=LE2Dzl0oMHI).**
-
-Our model can run 30+FPS for 2X 720p interpolation on a 2080Ti GPU. Currently, our method supports 2X,4X,8X... interpolation for 1080p video, and multi-frame interpolation between a pair of images. Everyone is welcome to use our alpha version and make suggestions!
+**Pinned Software: [RIFE-App](https://grisk.itch.io/rife-app) | [FlowFrames](https://nmkd.itch.io/flowframes) | [SVFI (中文)](https://github.com/YiWeiHuang-stack/Squirrel-Video-Frame-Interpolation)**
 
 16X interpolation results from two input images: 
 
-![Demo](./demo/I0_slomo_clipped.gif)
 ![Demo](./demo/I2_slomo_clipped.gif)
+![Demo](./demo/D2_slomo_clipped.gif)
 
-## Usage
+## Software
+[Flowframes](https://nmkd.itch.io/flowframes) | [SVFI(中文)](https://github.com/YiWeiHuang-stack/Squirrel-Video-Frame-Interpolation) | [Waifu2x-Extension-GUI](https://github.com/AaronFeng753/Waifu2x-Extension-GUI) | [Autodesk Flame](https://vimeo.com/505942142) | [SVP](https://www.svp-team.com/wiki/RIFE_AI_interpolation) | [MPV_lazy](https://github.com/hooke007/MPV_lazy)
+
+[RIFE-App(Paid)](https://grisk.itch.io/rife-app) | [Steam-VFI(Paid)](https://store.steampowered.com/app/1692080/SVFI/) 
+
+We are not responsible for and participating in the development of above software. According to the open source license, we respect the commercial behavior of other developers.
+
+[VapourSynth-RIFE](https://github.com/HolyWu/vs-rife) | [RIFE-ncnn-vulkan](https://github.com/nihui/rife-ncnn-vulkan) | [VapourSynth-RIFE-ncnn-Vulkan](https://github.com/HomeOfVapourSynthEvolution/VapourSynth-RIFE-ncnn-Vulkan) 
+
+<img src="https://api.star-history.com/svg?repos=Justin62628/Squirrel-RIFE,n00mkrad/flowframes,nihui/rife-ncnn-vulkan,hzwer/Practical-RIFE&type=Date" height="320" width="480" />
+
+If you are a developer, welcome to follow [Practical-RIFE](https://github.com/hzwer/Practical-RIFE), which aims to make RIFE more practical for users by adding various features and design new models with faster speed.
+## CLI Usage
 
 ### Installation
 
 ```
-git clone git@github.com:hzwer/arXiv2020-RIFE.git
-cd arXiv2020-RIFE
+git clone git@github.com:megvii-research/ECCV2022-RIFE.git
+cd ECCV2022-RIFE
 pip3 install -r requirements.txt
 ```
 
-* Download the pretrained **HD** models from [here](https://drive.google.com/file/d/11l8zknO1V5hapv2-Ke4DG9mHyBomS0Fc/view?usp=sharing).
-We are optimizing the visual effects and will support animation in the future. (百度网盘链接:https://pan.baidu.com/s/1Sc4o50NPlXQ5a1fdfffkgw  密码:1fne，把压缩包解开后放在 train_log/\*.pkl)
+* Download the pretrained **HD** models from [here](https://drive.google.com/file/d/1APIzVeI-4ZZCEuIRE1m6WYfSCaOsi_7_/view?usp=sharing). (百度网盘链接:https://pan.baidu.com/share/init?surl=u6Q7-i4Hu4Vx9_5BJibPPA 密码:hfk3，把压缩包解开后放在 train_log/\*)
 
-* Unzip and move the pretrained parameters to train_log/\*.pkl
+* Unzip and move the pretrained parameters to train_log/\*
+
+* This model is not reported by our paper, for our paper model please refer to [evaluation](https://github.com/hzwer/ECCV2022-RIFE#evaluation).
 
 ### Run
 
@@ -49,9 +57,9 @@ python3 inference_video.py --exp=2 --video=video.mp4
 ```
 (for 4X interpolation)
 ```
-python3 inference_video.py --exp=1 --video=video.mp4 --UHD
+python3 inference_video.py --exp=1 --video=video.mp4 --scale=0.5
 ```
-(If your video has very high resolution such as 2K and 4K, we recommend to use UHD mode.)
+(If your video has very high resolution such as 4K, we recommend set --scale=0.5 (default 1.0). If you generate disordered pattern on your videos, try set --scale=2.0. This parameter control the process resolution for optical flow model.)
 ```
 python3 inference_video.py --exp=2 --img=input/
 ```
@@ -63,9 +71,11 @@ python3 inference_video.py --exp=2 --video=video.mp4 --fps=60
 ```
 python3 inference_video.py --video=video.mp4 --montage --png
 ```
-(if you want to montage the origin video, skip static frames and save the png format output)
+(if you want to montage the origin video and save the png format output)
 
-The warning info, 'Warning: Your video has *** static frames, it may change the duration of the generated video.' means that your video has changed the frame rate by adding static frames, it is common if you have processed 25FPS video to 30FPS.
+**Optical Flow Estimation**
+
+You may refer to [#278](https://github.com/megvii-research/ECCV2022-RIFE/issues/278#event-7199085190).
 
 **Image Interpolation**
 
@@ -82,49 +92,94 @@ You can also use pngs to generate gif:
 ffmpeg -r 10 -f image2 -i output/img%d.png -s 448x256 -vf "split[s0][s1];[s0]palettegen=stats_mode=single[p];[s1][p]paletteuse=new=1" output/slomo.gif
 ```
 
+### Run in docker
+Place the pre-trained models in `train_log/\*.pkl` (as above)
+
+Building the container:
+```
+docker build -t rife -f docker/Dockerfile .
+```
+
+Running the container:
+```
+docker run --rm -it -v $PWD:/host rife:latest inference_video --exp=1 --video=untitled.mp4 --output=untitled_rife.mp4
+```
+```
+docker run --rm -it -v $PWD:/host rife:latest inference_img --img img0.png img1.png --exp=4
+```
+
+Using gpu acceleration (requires proper gpu drivers for docker):
+```
+docker run --rm -it --gpus all -v /dev/dri:/dev/dri -v $PWD:/host rife:latest inference_video --exp=1 --video=untitled.mp4 --output=untitled_rife.mp4
+```
+
 ## Evaluation
-Download [RIFE model reported by our paper](https://drive.google.com/file/d/1c1R7iF-ypN6USo-D2YH_ORtaH3tukSlo/view?usp=sharing).
+Download [RIFE model](https://drive.google.com/file/d/1h42aGYPNJn2q8j_GVkS_yDu__G_UZ2GX/view?usp=sharing) or [RIFE_m model](https://drive.google.com/file/d/147XVsDXBfJPlyct2jfo9kpbL944mNeZr/view?usp=sharing) reported by our paper.
+
+**UCF101**: Download [UCF101 dataset](https://liuziwei7.github.io/projects/VoxelFlow) at ./UCF101/ucf101_interp_ours/
 
 **Vimeo90K**: Download [Vimeo90K dataset](http://toflow.csail.mit.edu/) at ./vimeo_interp_test
 
 **MiddleBury**: Download [MiddleBury OTHER dataset](https://vision.middlebury.edu/flow/data/) at ./other-data and ./other-gt-interp
+
+**HD**: Download [HD dataset](https://github.com/baowenbo/MEMC-Net) at ./HD_dataset. We also provide a [google drive download link](https://drive.google.com/file/d/1iHaLoR2g1-FLgr9MEv51NH_KQYMYz-FA/view?usp=sharing).
 ```
+# RIFE
+python3 benchmark/UCF101.py
+# "PSNR: 35.282 SSIM: 0.9688"
 python3 benchmark/Vimeo90K.py
-# (Final result: "Avg PSNR: 35.695 SSIM: 0.9788")
-python3 benchmark/MiddelBury_Other.py
-# (Final result: "2.058")
+# "PSNR: 35.615 SSIM: 0.9779"
+python3 benchmark/MiddleBury_Other.py
+# "IE: 1.956"
+python3 benchmark/HD.py
+# "PSNR: 32.14"
+
+# RIFE_m
+python3 benchmark/HD_multi_4X.py
+# "PSNR: 22.96(544*1280), 31.87(720p), 34.25(1080p)"
 ```
 
 ## Training and Reproduction
-Because Vimeo90K dataset and the corresponding optical flow labels are too large, we cannot provide a complete dataset download link. We provide you with [a subset containing 100 samples](https://drive.google.com/file/d/1_MQmFWqaptBuEbsV2tmbqFsxmxMIqYDU/view?usp=sharing) for testing the pipeline. Please unzip it at ./dataset
-
-Each sample includes images (I0 I1 Imid : 9 x 256 x 448), and optical flow (flow_t0, flow_t1: 4, 256, 448). 
-
-For origin images, you can download them from [Vimeo90K dataset](http://toflow.csail.mit.edu/).
-
-For generating optical flow labels, our paper use [pytorch-liteflownet](https://github.com/sniklaus/pytorch-liteflownet). We also recommend [RAFT](https://github.com/princeton-vl/RAFT) because it's easier to configure. We recommend generating optical flow labels on 2X size images for better labels. You can also generate labels during training, or finetune the optical flow network on the training set. The final impact of the above operations on Vimeo90K PSNR is expected to be within 0.3.
+Download [Vimeo90K dataset](http://toflow.csail.mit.edu/).
 
 We use 16 CPUs, 4 GPUs and 20G memory for training: 
 ```
 python3 -m torch.distributed.launch --nproc_per_node=4 train.py --world_size=4
 ```
 
+## Revision History
+Major Revisions：
+
+2021.3.18 [arXiv](https://arxiv.org/pdf/2011.06294v5.pdf): Modify the main experimental data, especially the runtime related issues.
+
+2021.8.12 [arXiv](https://arxiv.org/pdf/2011.06294v6.pdf): Remove pre-trained model dependency and propose privileged distillation scheme for frame interpolation. Remove [census loss](https://github.com/hzwer/arXiv2021-RIFE/blob/0e241367847a0895748e64c6e1604c94db54d395/model/loss.py#L20) supervision.
+
+2021.11.17 [arXiv](https://arxiv.org/pdf/2011.06294v11.pdf): Support arbitrary-time frame interpolation, aka RIFEm and add more experiments.
+
+## Recommend
+We sincerely recommend some related papers:
+
+CVPR22 - [Optimizing Video Prediction via Video Frame Interpolation](https://openaccess.thecvf.com/content/CVPR2022/html/Wu_Optimizing_Video_Prediction_via_Video_Frame_Interpolation_CVPR_2022_paper.html)
+
+CVPR22 - [Video Frame Interpolation with Transformer](https://openaccess.thecvf.com/content/CVPR2022/html/Lu_Video_Frame_Interpolation_With_Transformer_CVPR_2022_paper.html)
+
+CVPR22 - [IFRNet: Intermediate Feature Refine Network for Efficient Frame Interpolation](https://openaccess.thecvf.com/content/CVPR2022/html/Kong_IFRNet_Intermediate_Feature_Refine_Network_for_Efficient_Frame_Interpolation_CVPR_2022_paper.html)
+
 ## Citation
 
 ```
-@article{huang2020rife,
-  title={RIFE: Real-Time Intermediate Flow Estimation for Video Frame Interpolation},
+@inproceedings{huang2022rife,
+  title={Real-Time Intermediate Flow Estimation for Video Frame Interpolation},
   author={Huang, Zhewei and Zhang, Tianyuan and Heng, Wen and Shi, Boxin and Zhou, Shuchang},
-  journal={arXiv preprint arXiv:2011.06294},
-  year={2020}
+  booktitle={Proceedings of the European Conference on Computer Vision (ECCV)},
+  year={2022}
 }
 ```
 
 ## Reference
-<img src="demo/intro.png" alt="img" width=350 />
 
 Optical Flow:
 [ARFlow](https://github.com/lliuz/ARFlow)  [pytorch-liteflownet](https://github.com/sniklaus/pytorch-liteflownet)  [RAFT](https://github.com/princeton-vl/RAFT)  [pytorch-PWCNet](https://github.com/sniklaus/pytorch-pwc)
 
 Video Interpolation: 
-[DAIN](https://github.com/baowenbo/DAIN)  [CAIN](https://github.com/myungsub/CAIN)  [TOflow](https://github.com/HyeongminLEE/AdaCoF-pytorch)  [MEMC-Net](https://github.com/baowenbo/MEMC-Net)   [SoftSplat](https://github.com/sniklaus/softmax-splatting)   [SepConv](https://github.com/sniklaus/sepconv-slomo)   [BMBC](https://github.com/JunHeum/BMBC)
+[DVF](https://github.com/lxx1991/pytorch-voxel-flow)  [TOflow](https://github.com/Coldog2333/pytoflow)  [SepConv](https://github.com/sniklaus/sepconv-slomo)  [DAIN](https://github.com/baowenbo/DAIN)  [CAIN](https://github.com/myungsub/CAIN)  [MEMC-Net](https://github.com/baowenbo/MEMC-Net)   [SoftSplat](https://github.com/sniklaus/softmax-splatting)  [BMBC](https://github.com/JunHeum/BMBC)  [EDSC](https://github.com/Xianhang/EDSC-pytorch)  [EQVI](https://github.com/lyh-18/EQVI)

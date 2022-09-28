@@ -19,7 +19,6 @@ import pdb
 
 # The following comes from RIFE_HDv3.py/IFNet_HDv3.py, thanks authors !!!
 
-
 def standard_flow_grid(flow):
     B, C, H, W = flow.shape
     hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
@@ -97,6 +96,8 @@ class IFBlock(nn.Module):
 
 
 class IFNet(nn.Module):
+    '''Intermediate Flow Network -- RIFE(Real-Time Intermediate Flow Estimation)'''
+
     def __init__(self):
         super(IFNet, self).__init__()
         self.block0 = IFBlock(7 + 4, c=90)
