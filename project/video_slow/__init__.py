@@ -51,10 +51,7 @@ def model_forward(model, device, input_tensor, multi_times=8):
     if H % multi_times != 0 or W % multi_times != 0:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
 
-    torch.cuda.synchronize()
-    with torch.jit.optimized_execution(False):
-        output_tensor = todos.model.forward(model, device, input_tensor)
-    torch.cuda.synchronize()
+    output_tensor = todos.model.forward(model, device, input_tensor)
 
     return output_tensor[:, :, 0:H, 0:W]
 
@@ -64,12 +61,12 @@ def model_forward_times(model, device, i1, i2, slow_times=1):
     outputs = []
     for n in range(slow_times):
         outputs = []
-        outputs.append(inputs[0].cpu())
+        outputs.append(inputs[0].cpu())  # [i1]
         for i in range(len(inputs) - 1):
             images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
             middle = model_forward(model, device, images)
-            outputs.append(middle.cpu())
-            outputs.append(inputs[i + 1].cpu())
+            outputs.append(middle.cpu())  # [i1, mid]
+            outputs.append(inputs[i + 1].cpu())  # [i1, mid, i2]
         inputs = outputs  # for next time
     return outputs
 
@@ -107,6 +104,7 @@ def image_predict(input_files, slow_times, output_dir):
             todos.data.save_tensor([output_tensor], output_file)
             OUTPUT_COUNT = OUTPUT_COUNT + 1
     todos.model.reset_device()
+
 
 def video_predict(input_file, slow_times, output_file):
     # load video
