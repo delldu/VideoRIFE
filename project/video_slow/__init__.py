@@ -45,17 +45,6 @@ def get_model():
     return model, device
 
 
-def model_forward(model, device, input_tensor, multi_times=8):
-    # zeropad for model
-    H, W = input_tensor.size(2), input_tensor.size(3)
-    if H % multi_times != 0 or W % multi_times != 0:
-        input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
-
-    output_tensor = todos.model.forward(model, device, input_tensor)
-
-    return output_tensor[:, :, 0:H, 0:W]
-
-
 def model_forward_times(model, device, i1, i2, slow_times=1):
     inputs = [i1, i2]
     outputs = []
@@ -64,7 +53,7 @@ def model_forward_times(model, device, i1, i2, slow_times=1):
         outputs.append(inputs[0].cpu())  # [i1]
         for i in range(len(inputs) - 1):
             images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
-            middle = model_forward(model, device, images)
+            middle = todos.model.forward(model, device, images)
             outputs.append(middle.cpu())  # [i1, mid]
             outputs.append(inputs[i + 1].cpu())  # [i1, mid, i2]
         inputs = outputs  # for next time

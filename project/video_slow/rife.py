@@ -99,7 +99,7 @@ class IFNet(nn.Module):
 
         self.blocks = nn.ModuleList([self.block0, self.block1, self.block2])
 
-    def forward(self, x):
+    def forward_x(self, x):
         B, C, H, W = x.shape
         img0 = x[:, :3]
         img1 = x[:, 3:]
@@ -129,4 +129,37 @@ class IFNet(nn.Module):
         mask = torch.sigmoid(mask)
         middle = warped_img0 * mask + warped_img0 * (1.0 - mask)
 
-        return middle
+        return middle.clamp(0.0, 1.0)
+
+    def forward(self, x):
+        # Define max GPU/CPU memory -- 4G
+        max_h = 1024
+        max_W = 1024
+        multi_times = 16
+
+        # Need Resize ?
+        B, C, H, W = x.size()
+        if H > max_h or W > max_W:
+            s = min(max_h / H, max_W / W)
+            SH, SW = int(s * H), int(s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
+        else:
+            resize_x = x
+
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % multi_times != 0 or PW % multi_times != 0:
+            r_pad = multi_times - (PW % multi_times)
+            b_pad = multi_times - (PH % multi_times)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
+        else:
+            resize_pad_x = resize_x
+
+        y = self.forward_x(resize_pad_x)
+        del resize_pad_x, resize_x  # Release memory !!!
+
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        if PH != H or PW != W:
+            y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)
+
+        return y
