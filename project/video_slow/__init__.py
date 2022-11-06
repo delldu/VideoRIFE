@@ -22,7 +22,7 @@ from . import rife
 import pdb
 
 
-def get_model():
+def get_slow_model():
     """Create model."""
 
     model_path = "models/video_slow.pth"
@@ -65,7 +65,7 @@ def image_predict(input_files, slow_times, output_dir):
     todos.data.mkdir(output_dir)
 
     # load model
-    model, device = get_model()
+    model, device = get_slow_model()
 
     # load files
     image_filenames = todos.data.load_files(input_files)
@@ -107,7 +107,7 @@ def video_predict(input_file, slow_times, output_file):
     todos.data.mkdir(output_dir)
 
     # load model
-    model, device = get_model()
+    model, device = get_slow_model()
 
     print(f"  Slow down {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
