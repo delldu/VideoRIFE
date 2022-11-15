@@ -14,7 +14,7 @@ import os
 import time
 import random
 import torch
-
+import todos
 import video_slow
 
 from tqdm import tqdm
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     model, device = video_slow.get_slow_model()
 
     N = 100
-    B, C, H, W = 1, 6, 1024, 1024
+    B, C, H, W = 1, 6, model.max_h, model.max_w
 
     mean_time = 0
     progress_bar = tqdm(total=N)
@@ -36,10 +36,7 @@ if __name__ == "__main__":
         # print("x: ", x.size())
 
         start_time = time.time()
-        with torch.jit.optimized_execution(False):
-            with torch.no_grad():
-                y = model(x.to(device))
-        torch.cuda.synchronize()
+        y = todos.model.forward(model, device, x)
         mean_time += time.time() - start_time
 
     mean_time /= N

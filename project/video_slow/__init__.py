@@ -22,15 +22,24 @@ from . import rife
 import pdb
 
 
+def get_tvm_model():
+    """
+    TVM model base on torch.jit.trace
+    """
+    model = rife.IFNet()
+    device = todos.model.get_device()
+    model = model.to(device)
+    model.eval()
+    print(f"Running tvm model model on {device} ...")
+
+    return model, device
+
+
 def get_slow_model():
     """Create model."""
 
-    model_path = "models/video_slow.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     model = rife.IFNet()
-    todos.model.load(model, checkpoint)
+    model = todos.model.ResizePadModel(model)
     device = todos.model.get_device()
     model = model.to(device)
     model.eval()
