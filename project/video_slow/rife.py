@@ -26,7 +26,6 @@ def standard_flow_grid(flow):
     hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
     vg = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
     grid = torch.cat([hg, vg], dim=1).to(flow.device)
-
     return grid
 
 
@@ -113,7 +112,7 @@ class IFNet(nn.Module):
 
         # self.load_state_dict(torch.load(checkpoint))
 
-    def forward_x(self, x):
+    def forward(self, x):
         B, C, H, W = x.shape
         img0 = x[:, 0:3]
         img1 = x[:, 3:6]
@@ -144,30 +143,3 @@ class IFNet(nn.Module):
         middle = warped_img0 * mask + warped_img0 * (1.0 - mask)
 
         return middle.clamp(0.0, 1.0)
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.MAX_H or W > self.MAX_W:
-            s = min(self.MAX_H / H, self.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.MAX_TIMES != 0 or PW % self.MAX_TIMES != 0:
-            r_pad = self.MAX_TIMES - (PW % self.MAX_TIMES)
-            b_pad = self.MAX_TIMES - (PH % self.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        y = self.forward_x(resize_pad_x)
-        del resize_pad_x, resize_x  # Release memory !!!
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y
