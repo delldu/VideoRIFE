@@ -39,13 +39,18 @@ def get_slow_model():
     """Create model."""
 
     model = rife.IFNet()
-    model = todos.model.ResizePadModel(model)
     device = todos.model.get_device()
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
+    # make sure model good for C/C++
     model = torch.jit.script(model)
+    # https://github.com/pytorch/pytorch/issues/52286
+    torch._C._jit_set_profiling_executor(False)
+    # C++ Reference
+    # torch::jit::getProfilingMode() = false;
+    # torch::jit::setTensorExprFuserEnabled(false);
 
     todos.data.mkdir("output")
     if not os.path.exists("output/video_slow.torch"):
@@ -106,6 +111,7 @@ def image_predict(input_files, slow_times, output_dir):
 
 def video_predict(input_file, slow_times, output_file):
     # load video
+    
     video = redos.video.Reader(input_file)
     if video.n_frames < 1:
         print(f"Read video {input_file} error.")
