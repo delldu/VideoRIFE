@@ -22,20 +22,13 @@ from typing import List, Optional
 import todos
 import pdb
 
-def bilinear_grid_sample(im, grid, align_corners: bool = False):
+# The following comes from mmcv/ops/point_sample.py
+def grid_sample(im, grid):
     """Given an input and a flow-field grid, computes the output using input
-    values and pixel locations from grid. Supported only bilinear interpolation
-    method to sample the input pixels.
-
+    values and pixel locations from grid. 
     Args:
         im (torch.Tensor): Input feature map, shape (N, C, H, W)
         grid (torch.Tensor): Point coordinates, shape (N, Hg, Wg, 2)
-        align_corners (bool): If set to True, the extrema (-1 and 1) are
-            considered as referring to the center points of the input’s
-            corner pixels. If set to False, they are instead considered as
-            referring to the corner points of the input’s corner pixels,
-            making the sampling more resolution agnostic.
-
     Returns:
         torch.Tensor: A tensor with sampled points, shape (N, C, Hg, Wg)
     """
@@ -46,12 +39,14 @@ def bilinear_grid_sample(im, grid, align_corners: bool = False):
     x = grid[:, :, :, 0]
     y = grid[:, :, :, 1]
 
-    if align_corners:
-        x = ((x + 1) / 2) * (w - 1)
-        y = ((y + 1) / 2) * (h - 1)
-    else:
-        x = ((x + 1) * w - 1) / 2
-        y = ((y + 1) * h - 1) / 2
+    # if align_corners:
+    #     x = ((x + 1) / 2) * (w - 1)
+    #     y = ((y + 1) / 2) * (h - 1)
+    # else:
+    #     x = ((x + 1) * w - 1) / 2
+    #     y = ((y + 1) * h - 1) / 2
+    x = ((x + 1) / 2) * (w - 1)
+    y = ((y + 1) / 2) * (h - 1)
 
     x = x.view(n, -1)
     y = y.view(n, -1)
@@ -97,6 +92,7 @@ def bilinear_grid_sample(im, grid, align_corners: bool = False):
 
     return (Ia * wa + Ib * wb + Ic * wc + Id * wd).reshape(n, c, gh, gw)
 
+
 def make_grid(B: int, H: int, W: int):
     hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
     vg = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
@@ -106,11 +102,14 @@ def make_grid(B: int, H: int, W: int):
 
 def warp(x, flow, grid):
     B, C, H, W = x.size()
-    flow = torch.cat([flow[:, 0:1, :, :] / ((W - 1.0) / 2.0), flow[:, 1:2, :, :] / ((H - 1.0) / 2.0)], dim=1)
+    flow = torch.cat(
+        [flow[:, 0:1, :, :] / ((W - 1.0) / 2.0), 
+        flow[:, 1:2, :, :] / ((H - 1.0) / 2.0)], dim=1)
     g = (grid + flow).permute(0, 2, 3, 1)
     # onnx support
     # return F.grid_sample(input=x, grid=g, mode="bilinear", padding_mode="border", align_corners=True)
-    return bilinear_grid_sample(x, g, align_corners=True)
+    return grid_sample(x, g)
+
 
 def resize(x, scale: float):
     return F.interpolate(x, scale_factor=scale, mode="bilinear", align_corners=False, recompute_scale_factor=False)
@@ -173,13 +172,30 @@ class IFBlock(nn.Module):
             ResConv(c),
             ResConv(c),
         )
-        self.lastconv = nn.Sequential(nn.ConvTranspose2d(c, 4 * 6, 4, 2, 1), nn.PixelShuffle(2))
+        self.lastconv = nn.Sequential(
+            nn.ConvTranspose2d(c, 4 * 6, 4, 2, 1), 
+            nn.PixelShuffle(2),
+        )
 
-    def forward(self, x, flow: Optional[torch.Tensor], scale: float = 1.0) -> List[torch.Tensor]:
+
+    def start(self, x, scale: float=8.0) -> List[torch.Tensor]:
+        """flow is None"""
         x = resize(x, 1.0 / scale)
-        if flow is not None:
-            flow = resize(flow, 1.0 / scale) / scale
-            x = torch.cat((x, flow), dim=1)
+
+        feat = self.conv0(x)
+        feat = self.convblock(feat)
+        feat = self.lastconv(feat)
+        feat = resize(feat, scale)
+        flow = feat[:, 0:4] * scale
+        mask = feat[:, 4:5]
+        return flow, mask
+
+    def forward(self, x, flow, scale: float=1.0) -> List[torch.Tensor]:
+        x = resize(x, 1.0 / scale)
+        """flow is not None"""
+        flow = resize(flow, 1.0 / scale) / scale
+        x = torch.cat((x, flow), dim=1)
+
         feat = self.conv0(x)
         feat = self.convblock(feat)
         feat = self.lastconv(feat)
@@ -195,7 +211,7 @@ class IFNet(nn.Module):
         self.MAX_H = 2048
         self.MAX_W = 4096
         self.MAX_TIMES = 32
-        # Define max GPU/CPU memory -- 4G, 440ms
+        # Define max GPU memory -- 8G, 440ms
 
         self.block0 = IFBlock(7 + 16, c=192)
         self.block1 = IFBlock(8 + 4 + 16, c=128)
@@ -218,10 +234,6 @@ class IFNet(nn.Module):
             new_sd[k] = v
         self.load_state_dict(new_sd)
 
-    def get_psnr(self, I1, I2):
-        mse = ((I1 - I2) ** 2.0).mean()
-        psnr = 20.0 * math.log10(1.0 / math.sqrt(mse + 1e-5))
-        return psnr
 
     def forward(self, x):
         B2, C2, H2, W2 = x.size()
@@ -234,10 +246,6 @@ class IFNet(nn.Module):
 
         I1 = x[:, 0:3, :, :]
         I2 = x[:, 3:6, :, :]
-        psnr = self.get_psnr(I1, I2)
-        # print(psnr)
-        if psnr < 25.0:
-            return I1[:, :, 0:H2, 0:W2]
 
         scale_list: List[float] = [8.0, 4.0, 2.0, 1.0]
 
@@ -248,7 +256,7 @@ class IFNet(nn.Module):
         F2 = self.encode(I2)
 
         xx = torch.cat((I1, I2, F1, F2, timestep), dim=1)
-        flow, mask = self.block0(xx, None, scale=scale_list[0])
+        flow, mask = self.block0.start(xx, scale=scale_list[0])
 
         W_I1 = I1
         W_I2 = I2
@@ -258,7 +266,7 @@ class IFNet(nn.Module):
             W_F2 = warp(F2, flow[:, 2:4], grid)
             xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1)
             fd, mask = block(xx, flow, scale=scale_list[i + 1])
-            flow += fd
+            flow = flow + fd
 
             W_I1 = warp(I1, flow[:, 0:2], grid)
             W_I2 = warp(I2, flow[:, 2:4], grid)

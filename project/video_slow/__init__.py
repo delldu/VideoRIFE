@@ -14,13 +14,17 @@ __version__ = "1.0.0"
 import os
 from tqdm import tqdm
 import torch
-
+import math
 import redos
 import todos
 from . import rife
 
 import pdb
 
+def get_psnr(I1, I2):
+    mse = ((I1 - I2) ** 2.0).mean()
+    psnr = 20.0 * math.log10(1.0 / math.sqrt(mse + 1e-5))
+    return psnr
 
 def get_tvm_model():
     """
@@ -67,7 +71,11 @@ def model_forward_times(model, device, i1, i2, slow_times=1):
         outputs.append(inputs[0].cpu())  # [i1]
         for i in range(len(inputs) - 1):
             images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
-            middle = todos.model.forward(model, device, images)
+            psnr = get_psnr(inputs[i], inputs[i + 1])
+            if psnr < 25.0:
+                middle = inputs[i]
+            else:
+                middle = todos.model.forward(model, device, images)
             outputs.append(middle.cpu())  # [i1, mid]
             outputs.append(inputs[i + 1].cpu())  # [i1, mid, i2]
         inputs = outputs  # for next time
@@ -111,7 +119,7 @@ def image_predict(input_files, slow_times, output_dir):
 
 def video_predict(input_file, slow_times, output_file):
     # load video
-    
+
     video = redos.video.Reader(input_file)
     if video.n_frames < 1:
         print(f"Read video {input_file} error.")

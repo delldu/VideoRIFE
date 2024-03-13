@@ -38,9 +38,6 @@ def test_input_shape():
         h = random.randint(-16, 16)
         w = random.randint(-16, 16)
         x = torch.randn(B, C, H + h, W + w)
-        # print("x: ", x.size())
-        # if 'cuda' in str(device.type):
-        #     x = x.half()
 
         start_time = time.time()
         with torch.no_grad():
@@ -66,8 +63,6 @@ def run_bench_mark():
     ) as p:
         for ii in range(N):
             image = torch.randn(B, C, H, W)
-            # if 'cuda' in str(device.type):
-            #     image = image.half()
 
             with torch.no_grad():
                 y = model(image.to(device))
