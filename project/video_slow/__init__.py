@@ -48,6 +48,7 @@ def get_slow_model():
     model.eval()
 
     print(f"Running on {device} ...")
+
     # make sure model good for C/C++
     model = torch.jit.script(model)
     # https://github.com/pytorch/pytorch/issues/52286
@@ -63,26 +64,44 @@ def get_slow_model():
     return model, device
 
 
-def model_forward_times(model, device, i1, i2, slow_times=1):
+def model_forward_times(model, device, i1, i2, insert_times=1):
+    outputs = [i1]
+
+    B, C, H, W = i1.size()
+    i1 = i1.to(device)
+    i2 = i2.to(device)
+
+    std_timestep = torch.ones(B, 1, H, W).to(i1.device)
+    images = torch.cat((i1, i2), dim=1)
+
     inputs = [i1, i2]
-    outputs = []
-    for n in range(slow_times):
-        outputs = []
-        outputs.append(inputs[0].cpu())  # [i1]
-        for i in range(len(inputs) - 1):
-            images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
-            psnr = get_psnr(inputs[i], inputs[i + 1])
-            if psnr < 25.0:
-                middle = inputs[i]
-            else:
-                middle = todos.model.forward(model, device, images)
-            outputs.append(middle.cpu())  # [i1, mid]
-            outputs.append(inputs[i + 1].cpu())  # [i1, mid, i2]
-        inputs = outputs  # for next time
+    for n in range(insert_times):
+        t = 1.0*(n + 1)/(insert_times + 1)
+        timestep = t * std_timestep # + torch.randn(B, 1, H, W).to(i1.device) * 0.1
+
+        with torch.no_grad():
+            middle = model(images, timestep)
+        outputs.append(middle.cpu())
+        # outputs = []
+        # outputs.append(inputs[0].cpu())  # [i1]
+        # for i in range(len(inputs) - 1):
+        #     images = torch.cat((inputs[i].cpu(), inputs[i + 1].cpu()), dim=1)
+        #     psnr = get_psnr(inputs[i], inputs[i + 1])
+        #     # if psnr < 25.0:
+        #     #     middle = inputs[i]
+        #     # else:
+        #     #     middle = todos.model.forward(model, device, images)
+
+        #     middle = todos.model.forward(model, device, images)
+        #     outputs.append(middle.cpu())  # [i1, mid]
+        #     outputs.append(inputs[i + 1].cpu())  # [i1, mid, i2]
+        # inputs = outputs  # for next time
+
+    outputs.append(i2)
     return outputs
 
 
-def image_predict(input_files, slow_times, output_dir):
+def image_predict(input_files, insert_times, output_dir):
     # Create directory to store result
     todos.data.mkdir(output_dir)
 
@@ -104,20 +123,21 @@ def image_predict(input_files, slow_times, output_dir):
         if i == 0:
             I1 = input_tensor
             I2 = input_tensor
+            continue
         else:
             I1 = I2
             I2 = input_tensor
 
-        outputs = model_forward_times(model, device, I1, I2, slow_times)
+        outputs = model_forward_times(model, device, I1, I2, insert_times)
 
-        for output_tensor in outputs[1:]:  # skip first
+        for output_tensor in outputs:
             output_file = f"{output_dir}/{OUTPUT_COUNT + 1:06d}.png"
             todos.data.save_tensor([output_tensor], output_file)
             OUTPUT_COUNT = OUTPUT_COUNT + 1
     todos.model.reset_device()
 
 
-def video_predict(input_file, slow_times, output_file):
+def video_predict(input_file, insert_times, output_file):
     # load video
 
     video = redos.video.Reader(input_file)
@@ -154,7 +174,7 @@ def video_predict(input_file, slow_times, output_file):
             I1 = I2
             I2 = input_tensor
 
-        outputs = model_forward_times(model, device, I1, I2, slow_times)
+        outputs = model_forward_times(model, device, I1, I2, insert_times)
 
         for output_tensor in outputs[1:]:  # skip first
             output_file = f"{output_dir}/{OUTPUT_COUNT + 1:06d}.png"

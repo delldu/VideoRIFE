@@ -209,9 +209,9 @@ class IFNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.MAX_H = 2048
-        self.MAX_W = 4096
+        self.MAX_W = 2048
         self.MAX_TIMES = 32
-        # Define max GPU memory -- 8G, 440ms
+        # Define max GPU memory -- 6.8G, 150ms
 
         self.block0 = IFBlock(7 + 16, c=192)
         self.block1 = IFBlock(8 + 4 + 16, c=128)
@@ -235,36 +235,48 @@ class IFNet(nn.Module):
         self.load_state_dict(new_sd)
 
 
-    def forward(self, x):
+    def forward(self, x, timestep):
         B2, C2, H2, W2 = x.size()
-
+        # todos.debug.output_var("x", x)
+        # tensor [x] size: [1, 6, 540, 960], min: 0.0, max: 1.0, mean: 0.148214
+        # timestep:float=0.5
+        # timestep = torch.ones(B, 1, H, W).to(x.device) * 0.5
+        # tensor [timestep] size: [1, 1, 540, 960], min: 0.5, max: 0.5, mean: 0.5
         assert C2 == 6, "x channel must be 6"
         pad_h = self.MAX_TIMES - (H2 % self.MAX_TIMES)
         pad_w = self.MAX_TIMES - (W2 % self.MAX_TIMES)
         x = F.pad(x, (0, pad_w, 0, pad_h), 'reflect')
+        timestep = F.pad(timestep, (0, pad_w, 0, pad_h), 'reflect')
+
         B, C, H, W = x.size()
 
         I1 = x[:, 0:3, :, :]
+        # tensor [I1] size: [1, 3, 544, 992], min: 0.0, max: 1.0, mean: 0.148846
         I2 = x[:, 3:6, :, :]
 
         scale_list: List[float] = [8.0, 4.0, 2.0, 1.0]
 
-        # timestep:float=0.5
-        timestep = torch.ones(B, 1, H, W).to(x.device) * 0.5
-
         F1 = self.encode(I1)
+        # tensor [F1] size: [1, 8, 544, 992], min: -2.179624, max: 1.404768, mean: -0.036805
         F2 = self.encode(I2)
 
         xx = torch.cat((I1, I2, F1, F2, timestep), dim=1)
+        # tensor [xx] size: [1, 23, 544, 992], min: -2.179624, max: 1.404768, mean: 0.035861
         flow, mask = self.block0.start(xx, scale=scale_list[0])
+        # tensor [flow] size: [1, 4, 544, 992], min: -18.210167, max: 17.90671, mean: 0.000107
+        # tensor [mask] size: [1, 1, 544, 992], min: -1.205167, max: 1.715648, mean: 0.03429
 
         W_I1 = I1
         W_I2 = I2
         grid = make_grid(B, H, W).to(x.device)
+        # todos.debug.output_var("grid", grid)
+        # tensor [grid] size: [1, 2, 544, 992], min: -1.0, max: 1.0, mean: 0.0
+
         for i, block in enumerate(self.blocks):  # self.block1, self.block2, self.block3
             W_F1 = warp(F1, flow[:, 0:2], grid)
             W_F2 = warp(F2, flow[:, 2:4], grid)
             xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1)
+
             fd, mask = block(xx, flow, scale=scale_list[i + 1])
             flow = flow + fd
 

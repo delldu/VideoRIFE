@@ -38,12 +38,15 @@ def test_input_shape():
         h = random.randint(-16, 16)
         w = random.randint(-16, 16)
         x = torch.randn(B, C, H + h, W + w)
+        timestep = torch.ones(B, 1, H + h, W + w) * 0.5
 
         start_time = time.time()
         with torch.no_grad():
-            y = model(x.to(device))
+            y = model(x.to(device), timestep.to(device))
         if 'cpu' not in str(device):
             torch.cuda.synchronize()
+
+        del x, timestep
         mean_time += time.time() - start_time
 
     mean_time /= N
@@ -63,9 +66,10 @@ def run_bench_mark():
     ) as p:
         for ii in range(N):
             image = torch.randn(B, C, H, W)
+            timestep = torch.ones(B, 1, H, W) * 0.5
 
             with torch.no_grad():
-                y = model(image.to(device))
+                y = model(image.to(device), timestep.to(device))
             if 'cpu' not in str(device):
                 torch.cuda.synchronize()
         p.step()
@@ -89,23 +93,25 @@ def export_onnx_model():
     model.to(device)
 
     dummy_input = torch.randn(B, C, H, W).to(device)
+    dummy_timestep = torch.ones(B, 1, H, W).to(device) * 0.5
 
     with torch.no_grad():
-        dummy_output = model(dummy_input)
+        dummy_output = model(dummy_input, dummy_timestep)
     torch_outputs = [dummy_output.cpu()]
 
     # 2. Export onnx model
-    input_names = [ "input"]
+    input_names = [ "input", "timestep"]
     output_names = [ "output" ]
     dynamic_axes = { 
         'input' : {2: 'height', 3: 'width'}, 
+        'timestep' : {2: 'height', 3: 'width'}, 
         'output' : {2: 'height', 3: 'width'} 
     }
 
     onnx_filename = "output/video_slow.onnx"
 
     torch.onnx.export(model, 
-        (dummy_input),
+        (dummy_input, dummy_timestep),
         onnx_filename, 
         verbose=False,
         input_names=input_names,
@@ -132,7 +138,7 @@ def export_onnx_model():
     def to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
-    onnx_inputs = {input_names[0]: to_numpy(dummy_input) }
+    onnx_inputs = {input_names[0]: to_numpy(dummy_input), input_names[1]: to_numpy(dummy_timestep)}
     onnx_outputs = ort_session.run(None, onnx_inputs)
 
     # 5.Compare output results
