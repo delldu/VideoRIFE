@@ -885,7 +885,7 @@ ggml_tensor_t* ggml_nn_slice(ggml_context_t *ctx, ggml_tensor_t *x, int dim, int
             (int64_t)shapes[0], (int64_t)shapes[1], (int64_t)shapes[2], (int64_t)shapes[3],
             strides[1], strides[2], strides[3],
             offset);
-    return ggml_cont(ctx, x);
+    return ggml_dup(ctx, x); // fix bug: make sure x could be padded
 }
 
 // dell_add

@@ -6,7 +6,9 @@
 #include <vector>
 
 #pragma GCC diagnostic ignored "-Wformat-truncation"
-
+// x = ggml_cont(ctx, x);
+// ggml_set_name(x, "x");
+// ggml_set_output(x);
 
 // def conv(in_planes, out_planes, stride=1):
 //     return nn.Sequential(
@@ -45,8 +47,6 @@ struct CustConv2d {
         return x;
     }
 };
-
-
 
 /*
  Head(
@@ -179,9 +179,11 @@ struct ResConv {
     }
 
     ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x) {
+        // return self.relu(self.conv(x) * self.beta + x)
         ggml_tensor_t *y = conv.forward(ctx, x);
         y = ggml_mul(ctx, y, beta);
         x = ggml_add(ctx, y, x);
+        x = ggml_leaky_relu(ctx, x, 0.2, false/*inplace*/);
 
         return x;
     }
@@ -295,6 +297,9 @@ struct IFBlock {
     }
 
     ggml_tensor_t* resize(struct ggml_context* ctx, ggml_tensor_t* x, float scale) {
+        if (fabsf(scale - 1.0) < 1e-5)
+            return x;
+
         int W = (int)x->ne[0];
         int H = (int)x->ne[1];
         int C = (int)x->ne[2];
@@ -321,34 +326,34 @@ struct IFBlock {
         // flow = feat[:, 0:4] * scale
         // mask = feat[:, 4:5]
         // return flow, mask
-        CheckPoint("scale = %.4f", scale);
-        ggml_tensor_dump("x", x);
-
         std::vector<ggml_tensor_t *> flow_mask_list;
-        if (scale > 1.0) {
-            x = resize(ctx, x, 1.0/scale);
-        }
+        x = resize(ctx, x, 1.0/scale);
+  
         if (start_flow != NULL) {
-            ggml_tensor_dump("start_flow", start_flow);
-
             start_flow = resize(ctx, start_flow, 1.0/scale);
-            start_flow = ggml_scale(ctx, start_flow, 1.0/scale); // xxxx_debug
+            start_flow = ggml_scale(ctx, start_flow, 1.0/scale);
             x = ggml_concat(ctx, x, start_flow, 2/*dim on channel*/);
         }
         ggml_tensor_t *feat, *flow, *mask;
-
         feat = conv0.forward(ctx, x);
-        ggml_tensor_dump("feat", feat);
-
         for (int i = 0; i < 8; i++) {
             feat = convblocks[i].forward(ctx, feat);
         }
+        // feat = convblocks[0].forward(ctx, feat);
+        // feat = convblocks[1].forward(ctx, feat);
+        // feat = convblocks[2].forward(ctx, feat);
+        // feat = convblocks[3].forward(ctx, feat);
+        // feat = convblocks[4].forward(ctx, feat);
+        // feat = convblocks[5].forward(ctx, feat);
+        // feat = convblocks[6].forward(ctx, feat);
+        // feat = convblocks[7].forward(ctx, feat);
+
         feat = lastconv.forward(ctx, feat);
         feat = resize(ctx, feat, scale);
-        ggml_tensor_dump("====================> lastconv", feat);
+        // # tensor [feat] size: [1, 6, 1056, 1056], min: -10.310724, max: 2.952527, mean: -0.450135
 
         flow = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 0, 4, 1/*step*/);
-        // flow = ggml_scale(ctx, flow, scale); // xxxx_debug
+        flow = ggml_scale(ctx, flow, scale);
         mask = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 4, 5, 1/*step*/);
 
         flow_mask_list.push_back(flow);
@@ -444,12 +449,19 @@ struct IFNet : GGMLNetwork {
     }
 
     ggml_tensor_t* make_grid(struct ggml_context* ctx, int B, int H, int W) {
+        // hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
+        // vg = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
+        // # hg.size() -- [1, 1, 1056, 1056]
+        // # vg.size() -- [1, 1, 1056, 1056]
+
+        // grid = torch.cat([hg, vg], dim=1)
+
+
         ggml_tensor_t* x = ggml_grid_mesh(ctx, B, H, W, 1/*norm*/);
-        x = ggml_permute(ctx, x, 2, 0, 1, 3); // [2, W, H, B] -> [W, H, 2, B]
-        x = ggml_cont(ctx, x);
+        x = ggml_scale(ctx, x, 2.0);
+        x = ggml_add_constant(ctx, x, -1.0);
 
-        ggml_tensor_dump("make_grid", x);
-
+        x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 0, 1, 3)); // [2, W, H, B] -> [W, H, 2, B]
         return x;
     }
 
@@ -471,14 +483,12 @@ struct IFNet : GGMLNetwork {
 
         ggml_tensor_t *flow_x = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 0, 1, 1/*step*/);
         ggml_tensor_t *flow_y = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 1, 2, 1/*step*/);
-        // flow_x = ggml_scale(ctx, flow_x, 2.0f/(W - 1.0)); // xxxx_debug
-        // flow_y = ggml_scale(ctx, flow_y, 2.0f/(H - 1.0));
+        flow_x = ggml_scale(ctx, flow_x, 2.0f/(W - 1.0));
+        flow_y = ggml_scale(ctx, flow_y, 2.0f/(H - 1.0));
         flow = ggml_concat(ctx, flow_x, flow_y, 2/*dim*/);
 
         ggml_tensor_t *g = ggml_add(ctx, grid, flow);
-        ggml_tensor_dump("grid1", g);
         g = ggml_permute(ctx, g, 1, 2, 0, 3); // [W, H, 2, B] -> [2, W, H, B]
-        ggml_tensor_dump("grid2", g);
 
         return ggml_grid_sample(ctx, feat, g);
     }
@@ -493,10 +503,6 @@ struct IFNet : GGMLNetwork {
         I2 = argv[1];
         timestep = argv[2];
 
-        ggml_tensor_dump("I1", I1);
-        ggml_tensor_dump("I2", I2);
-        ggml_tensor_dump("timestep1", timestep);
-
         // B2, C2, H2, W2 = x.size()
         int W2 = (int)I1->ne[0];
         int H2 = (int)I1->ne[1];
@@ -507,43 +513,107 @@ struct IFNet : GGMLNetwork {
         I2 = resize_pad(ctx, I2);
         timestep = resize_pad(ctx, timestep);
 
-        ggml_tensor_dump("I1", I1);
-        ggml_tensor_dump("I2", I2);
-        ggml_tensor_dump("timestep", timestep);
+        {
+            I1 = ggml_cont(ctx, I1);
+            ggml_set_name(I1, "I1");
+            ggml_set_output(I1);
+
+            I2 = ggml_cont(ctx, I2);
+            ggml_set_name(I2, "I2");
+            ggml_set_output(I2);
+
+            timestep = ggml_cont(ctx, timestep);
+            ggml_set_name(timestep, "timestep");
+            ggml_set_output(timestep);
+
+            // Info: ********************** I1 Tensor: 1x3x1024x1024
+            // min: 0.0000, max: 1.0000, mean: 0.4839
+            // Info: ********************** I2 Tensor: 1x3x1024x1024
+            // min: 0.0000, max: 1.0000, mean: 0.4844
+            // Info: ********************** timestep Tensor: 1x1x1024x1024
+            // min: 0.5000, max: 0.5000, mean: 0.5000
+
+            // tensor [I1] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.483912
+            // tensor [I2] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.484398
+            // tensor [timestep] size: [1, 1, 1024, 1024], min: 0.5, max: 0.5, mean: 0.5
+        }
 
         int W = (int)I1->ne[0];
         int H = (int)I1->ne[1];
-        int C = (int)I1->ne[2];
+        // int C = (int)I1->ne[2];
         int B = (int)I1->ne[3];
 
-        // tensor [x] size: [1, 6, 544, 992], min: 0.0, max: 1.0, mean: 0.148846
         ggml_tensor_t *F1, *F2, *xx, *flow, *mask, *W_F1, *W_F2, *W_I1, *W_I2;
-
-
         // F1 = self.encode(I1)
         // F2 = self.encode(I2)
         // # tensor [F1] size: [1, 8, 544, 992], min: -2.179624, max: 1.404768, mean: -0.036805
         F1 = encode.forward(ctx, I1);
         F2 = encode.forward(ctx, I2);
-        ggml_tensor_dump("F1", F1);
-        ggml_tensor_dump("F2", F2);
+        {
+            F1 = ggml_cont(ctx, F1);
+            ggml_set_name(F1, "F1");
+            ggml_set_output(F1);
+
+            F2 = ggml_cont(ctx, F2);
+            ggml_set_name(F2, "F2");
+            ggml_set_output(F2);
+
+            // Info: ********************** F1 Tensor: 1x8x1024x1024
+            // min: -2.5416, max: 2.1924, mean: -0.0849
+            // Info: ********************** F2 Tensor: 1x8x1024x1024
+            // min: -2.5416, max: 2.1924, mean: -0.0752
+
+            // tensor [F1] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.084768
+            // tensor [F2] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.075074
+        }
 
         xx = ggml_cat(ctx, 5, I1, I2, F1, F2, timestep, 2/*dim on channel*/);
-        // # tensor [xx] size: [1, 23, 544, 992], min: -2.179624, max: 1.404768, mean: 0.035861
-        ggml_tensor_dump("xx", xx);
+        {
+            xx = ggml_cont(ctx, xx);
+            ggml_set_name(xx, "xx");
+            ggml_set_output(xx);
+
+            // Info: ********************** xx Tensor: 1x23x1024x1024
+            // min: -2.5416, max: 2.1924, mean: 0.0924
+
+            // tensor [xx] size: [1, 23, 1024, 1024], min: -2.54316, max: 2.194751, mean: 0.092443
+        }
 
         // flow, mask = self.block0.forward(xx, None, scale=scale_list[0])
         flow_mask_list = block0.forward(ctx, xx, NULL /*flow*/, scale_list[0]);
         flow = flow_mask_list[0];
         mask = flow_mask_list[1];
-        ggml_tensor_dump("flow", flow);
-        ggml_tensor_dump("mask", mask);
+        {
+            flow = ggml_cont(ctx, flow);
+            ggml_set_name(flow, "flow");
+            ggml_set_output(flow);
 
+            // mask = ggml_cont(ctx, mask);
+            // ggml_set_name(mask, "mask");
+            // ggml_set_output(mask);            
+
+            // Info: ********************** flow Tensor: 1x4x1024x1024
+            // min: -10.2746, max: 10.6259, mean: 0.0037
+
+            // tensor [flow] size: [1, 4, 1024, 1024], min: -10.025298, max: 11.566859, mean: 0.010115
+            // tensor [mask] size: [1, 1, 1024, 1024], min: -1.444131, max: 1.61599, mean: 0.053681
+        }
 
         W_I1 = I1;
         W_I2 = I2;
         ggml_tensor_t *grid = make_grid(ctx, B, H, W);
-        ggml_tensor_dump("--->grid", grid);
+        {
+            grid = ggml_cont(ctx, grid);
+            ggml_set_name(grid, "grid");
+            ggml_set_output(grid);
+
+            // Info: ********************** grid Tensor: 1x2x1024x1024
+            // min: -1.0000, max: 0.9980, mean: -0.0010
+
+            // tensor [grid] size: [1, 2, 1024, 1024], min: -1.0, max: 1.0, mean: 0.0
+        }
+
+        // ggml_tensor_dump("--->grid", grid);
         // grid    f32 [1024, 1024, 2, 1],  (permuted) (cont)
 
         // for i, block in enumerate(self.blocks):  # self.block1, self.block2, self.block3
@@ -563,54 +633,77 @@ struct IFNet : GGMLNetwork {
             flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
             flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
 
-            ggml_tensor_dump("==> flow1", flow1);
-            ggml_tensor_dump("==> flow2", flow2);
-
             W_F1 = warp(ctx, F1, flow1, grid);
             W_F2 = warp(ctx, F2, flow2, grid);
 
-            ggml_tensor_dump("==> W_I1", W_I1);
-            ggml_tensor_dump("==> W_I2", W_I2);
-            ggml_tensor_dump("==> W_F1", W_F1);
-            ggml_tensor_dump("==> W_F2", W_F2);
-            ggml_tensor_dump("==> timestep", timestep);
-            ggml_tensor_dump("==> mask", mask);
+            // ggml_tensor_dump("==> W_I1", W_I1);
+            // ggml_tensor_dump("==> W_I2", W_I2);
+            // ggml_tensor_dump("==> W_F1", W_F1);
+            // ggml_tensor_dump("==> W_F2", W_F2);
+            // ggml_tensor_dump("==> timestep", timestep);
+            // ggml_tensor_dump("==> mask", mask);
 
             xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
-            ggml_tensor_dump("==> xx", xx);
 
             flow_mask_list = blocks[i]->forward(ctx, xx, flow, scale_list[i + 1]);
             fd = flow_mask_list[0];
             mask = flow_mask_list[1];
             flow = ggml_add(ctx, flow, fd);
-            ggml_tensor_dump("==> fd", fd);
 
             flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
             flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
             W_I1 = warp(ctx, I1, flow1, grid);
             W_I2 = warp(ctx, I2, flow2, grid);
-
-            ggml_tensor_dump("==> W_I1", W_I1);
-            ggml_tensor_dump("==> W_I2", W_I2);
         }
 
         // ------------------------------
         ggml_tensor_t *one_mask;
         {
-          mask = ggml_sigmoid(ctx, mask);
-          one_mask = ggml_dup(ctx, mask);
-          one_mask = ggml_constant(ctx, one_mask, 1.0);
-          one_mask = ggml_sub(ctx, one_mask, mask);
+            mask = ggml_sigmoid(ctx, mask);
+            one_mask = ggml_dup(ctx, mask);
+            one_mask = ggml_constant(ctx, one_mask, 1.0);
+            one_mask = ggml_sub(ctx, one_mask, mask);
         }
 
-        ggml_tensor_dump("==> W_I1", W_I1);
-        ggml_tensor_dump("==> W_I2", W_I2);
+        {
+            mask = ggml_cont(ctx, mask);
+            ggml_set_name(mask, "mask");
+            ggml_set_output(mask);  
+
+            W_I1 = ggml_cont(ctx, W_I1);
+            ggml_set_name(W_I1, "W_I1");
+            ggml_set_output(W_I1);
+
+            W_I2 = ggml_cont(ctx, W_I2);
+            ggml_set_name(W_I2, "W_I2");
+            ggml_set_output(W_I2);
+
+
+            // Info: ********************** W_I1 Tensor: 1x3x1024x1024
+            // min: 0.0099, max: 1.0000, mean: 0.4838
+            // Info: ********************** W_I2 Tensor: 1x3x1024x1024
+            // min: 0.0116, max: 1.0000, mean: 0.4846
+
+            // Info: ********************** mask Tensor: 1x1x1024x1024
+            // min: 0.0150, max: 0.9947, mean: 0.5111
+
+            // tensor [W_I1] size: [1, 3, 1024, 1024], min: 2.8e-05, max: 1.0, mean: 0.483843
+            // tensor [W_I2] size: [1, 3, 1024, 1024], min: 3.4e-05, max: 1.0, mean: 0.484579
+            // tensor [mask] size: [1, 1, 1024, 1024], min: 1.5e-05, max: 1.0, mean: 0.546369
+        }
 
         // middle = W_I1 * mask + W_I2 * (1.0 - mask)
         ggml_tensor_t *middle;
         middle = ggml_add(ctx, ggml_mul(ctx, W_I1, mask), ggml_mul(ctx, W_I2, one_mask));
+        {
+            middle = ggml_cont(ctx, middle);
+            ggml_set_name(middle, "middle");
+            ggml_set_output(middle);                      
 
-        ggml_tensor_dump("==> middle", middle);
+            // Info: -------------- output_tensor Tensor: 1x3x1024x1024
+            // min: 0.0107, max: 1.0000, mean: 0.4841
+            // tensor [middle] size: [1, 3, 1024, 1024], min: 6.9e-05, max: 1.0, mean: 0.484024
+        }
 
       	return middle;
     }

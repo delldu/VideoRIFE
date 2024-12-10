@@ -37,7 +37,7 @@ int video_slow_predict(VideoSlowNetwork *slow_net, char *input_file, char *secon
         TENSOR *timestep = tensor_create(input1_tensor->batch, 1, input1_tensor->height, input1_tensor->width);
         check_tensor(timestep);
         tensor_clamp_(timestep, 0.5, 0.5);
-        
+
         output_tensor = slow_net->forward(input1_tensor, input2_tensor, timestep);
         check_tensor(output_tensor);
         tensor_destroy(input2_tensor);
@@ -49,102 +49,79 @@ int video_slow_predict(VideoSlowNetwork *slow_net, char *input_file, char *secon
 
         TENSOR *xxxx_test;
 
-        // xxxx_test = slow_net->net.get_output_tensor("xlist0");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** xlist0", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("xlist1");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** xlist1", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("xlist2");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** xlist2", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("xlist3");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** xlist3", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("cnet");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** cnet", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("net");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** net", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-        // xxxx_test = slow_net->net.get_output_tensor("inp");
-        // if (tensor_valid(xxxx_test)) {
-        //     tensor_show("********************** inp", xxxx_test);
-        //     tensor_destroy(xxxx_test);
-        // }
-
-
-        xxxx_test = slow_net->net.get_output_tensor("x_flow");
+        xxxx_test = slow_net->net.get_output_tensor("I1");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_flow", xxxx_test);
+            tensor_show("********************** I1", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
-        xxxx_test = slow_net->net.get_output_tensor("x_corr");
+        xxxx_test = slow_net->net.get_output_tensor("I2");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_corr", xxxx_test);
+            tensor_show("********************** I2", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
-        xxxx_test = slow_net->net.get_output_tensor("x_motion_feat");
+        xxxx_test = slow_net->net.get_output_tensor("timestep");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_motion_feat", xxxx_test);
+            tensor_show("********************** timestep", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
-        xxxx_test = slow_net->net.get_output_tensor("x_inp");
+        xxxx_test = slow_net->net.get_output_tensor("F1");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_inp", xxxx_test);
+            tensor_show("********************** F1", xxxx_test);
+            tensor_destroy(xxxx_test);
+        }
+
+        xxxx_test = slow_net->net.get_output_tensor("F2");
+        if (tensor_valid(xxxx_test)) {
+            tensor_show("********************** F2", xxxx_test);
+            tensor_destroy(xxxx_test);
+        }
+
+        xxxx_test = slow_net->net.get_output_tensor("xx");
+        if (tensor_valid(xxxx_test)) {
+            tensor_show("********************** xx", xxxx_test);
+            tensor_destroy(xxxx_test);
+        }
+
+        xxxx_test = slow_net->net.get_output_tensor("flow");
+        if (tensor_valid(xxxx_test)) {
+            tensor_show("********************** flow", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
 
-        xxxx_test = slow_net->net.get_output_tensor("x_net");
+        xxxx_test = slow_net->net.get_output_tensor("grid");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_net", xxxx_test);
+            tensor_show("********************** grid", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
-        xxxx_test = slow_net->net.get_output_tensor("x_delta_flow");
+        xxxx_test = slow_net->net.get_output_tensor("W_I1");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** x_delta_flow", xxxx_test);
+            tensor_show("********************** W_I1", xxxx_test);
+            tensor_destroy(xxxx_test);
+        }
+
+        xxxx_test = slow_net->net.get_output_tensor("W_I2");
+        if (tensor_valid(xxxx_test)) {
+            tensor_show("********************** W_I2", xxxx_test);
+            tensor_destroy(xxxx_test);
+        }
+
+        xxxx_test = slow_net->net.get_output_tensor("mask");
+        if (tensor_valid(xxxx_test)) {
+            tensor_show("********************** mask", xxxx_test);
             tensor_destroy(xxxx_test);
         }
 
 
-
-
-
-        xxxx_test = slow_net->net.get_output_tensor("m");
+        xxxx_test = slow_net->net.get_output_tensor("middle");
         if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** m", xxxx_test);
+            tensor_show("********************** middle", xxxx_test);
             tensor_destroy(xxxx_test);
         }
-
-        xxxx_test = slow_net->net.get_output_tensor("update_mask");
-        if (tensor_valid(xxxx_test)) {
-            tensor_show("********************** update_mask", xxxx_test);
-            tensor_destroy(xxxx_test);
-        }
-
 
         // xxxx_test = slow_net->net.get_output_tensor("m");
         // if (tensor_valid(xxxx_test)) {
@@ -166,8 +143,8 @@ int video_slow_predict(VideoSlowNetwork *slow_net, char *input_file, char *secon
         // }
 
 
-        // tensor_saveas_image(output_tensor, 0 /*batch 0*/, output_file);
-        // chmod(output_file, 0644);
+        tensor_saveas_image(output_tensor, 0 /*batch 0*/, output_file);
+        chmod(output_file, 0644);
 
         tensor_destroy(output_tensor);
     }
