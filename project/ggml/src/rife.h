@@ -10,16 +10,7 @@
 // ggml_set_name(x, "x");
 // ggml_set_output(x);
 
-// def conv(in_planes, out_planes, stride=1):
-//     return nn.Sequential(
-//         nn.Conv2d(
-//             in_planes, out_planes, kernel_size=3, stride=2, padding=1, dilation=1, bias=True
-//         ),
-//         nn.LeakyReLU(0.2, True),
-//     )
-
-
-struct CustConv2d {
+struct Conv2dReLU {
     int in_planes;
     int out_planes;
 
@@ -43,29 +34,18 @@ struct CustConv2d {
 
     ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x) {
         x = conv.forward(ctx, x);
-        x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+        x = ggml_leaky_relu(ctx, x, 0.2, true /*inplace*/);
         return x;
     }
 };
 
-/*
- Head(
-  (cnn0): Conv2d(3, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
-  (cnn1): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-  (cnn2): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-  (cnn3): ConvTranspose2d(32, 8, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
-  (relu): LeakyReLU(negative_slope=0.2, inplace=True)
-) */
-
 struct Head {
-    // network params
-    struct Conv2d cnn0;  // torch.float32, [32, 3, 3, 3] 
-    struct Conv2d cnn1;  // torch.float32, [32, 32, 3, 3] 
-    struct Conv2d cnn2;  // torch.float32, [32, 32, 3, 3] 
-    struct ConvTranspose2d cnn3;  // torch.float32, [32, 8, 4, 4] 
+    struct Conv2d cnn0;
+    struct Conv2d cnn1;
+    struct Conv2d cnn2;
+    struct ConvTranspose2d cnn3;
 
     void create_weight_tensors(struct ggml_context* ctx) {
-        // self.cnn0 = nn.Conv2d(3, 32, 3, 2, 1)
         cnn0.in_channels = 3;
         cnn0.out_channels = 32;
         cnn0.kernel_size = {3, 3};
@@ -73,7 +53,6 @@ struct Head {
         cnn0.padding = { 1, 1 };
         cnn0.create_weight_tensors(ctx);
 
-        // self.cnn1 = nn.Conv2d(32, 32, 3, 1, 1)
         cnn1.in_channels = 32;
         cnn1.out_channels = 32;
         cnn1.kernel_size = {3, 3};
@@ -81,7 +60,6 @@ struct Head {
         cnn1.padding = { 1, 1 };
         cnn1.create_weight_tensors(ctx);
 
-        // self.cnn2 = nn.Conv2d(32, 32, 3, 1, 1)
         cnn2.in_channels = 32;
         cnn2.out_channels = 32;
         cnn2.kernel_size = {3, 3};
@@ -89,7 +67,6 @@ struct Head {
         cnn2.padding = { 1, 1 };
         cnn2.create_weight_tensors(ctx);
 
-        // (cnn3): ConvTranspose2d(32, 8, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
         cnn3.in_channels = 32;
         cnn3.out_channels = 8;
         cnn3.kernel_size = 4;
@@ -113,25 +90,14 @@ struct Head {
     }
 
     ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x) {
-      // x0 = self.cnn0(x)
-      // x = self.relu(x0)
-      // x1 = self.cnn1(x)
-      // x = self.relu(x1)
-      // x2 = self.cnn2(x)
-      // x = self.relu(x2)
-      // x3 = self.cnn3(x)
-      // return x3
-
-      // self.relu = nn.LeakyReLU(0.2, True)
-
       x = cnn0.forward(ctx, x);
-      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+      x = ggml_leaky_relu(ctx, x, 0.2, true /*inplace*/);
 
       x = cnn1.forward(ctx, x);
-      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+      x = ggml_leaky_relu(ctx, x, 0.2, true /*inplace*/);
 
       x = cnn2.forward(ctx, x);
-      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+      x = ggml_leaky_relu(ctx, x, 0.2, true /*inplace*/);
 
       x = cnn3.forward(ctx, x);
 
@@ -139,20 +105,7 @@ struct Head {
     }
 };
 
-/*
- ResConv(
-  (conv): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-  (relu): LeakyReLU(negative_slope=0.2, inplace=True)
-) */
-
-// def __init__(self, c):
-//     super().__init__()
-//     self.conv = nn.Conv2d(c, c, 3, 1, 1, dilation=1, groups=1)
-//     self.beta = nn.Parameter(torch.ones((1, c, 1, 1)), requires_grad=True)
-//     self.relu = nn.LeakyReLU(0.2, True)
-
 struct ResConv {
-    // network hparams
     int c;
 
     struct Conv2d conv;
@@ -183,7 +136,7 @@ struct ResConv {
         ggml_tensor_t *y = conv.forward(ctx, x);
         y = ggml_mul(ctx, y, beta);
         x = ggml_add(ctx, y, x);
-        x = ggml_leaky_relu(ctx, x, 0.2, false/*inplace*/);
+        x = ggml_leaky_relu(ctx, x, 0.2, true/*inplace*/);
 
         return x;
     }
@@ -194,8 +147,8 @@ struct IFBlockFirst {
     int in_planes;
     int c;
 
-    struct CustConv2d conv_0;
-    struct CustConv2d conv_1;
+    struct Conv2dReLU conv_0;
+    struct Conv2dReLU conv_1;
 
     void create_weight_tensors(struct ggml_context* ctx) {
         conv_0.in_planes = in_planes;
@@ -212,7 +165,6 @@ struct IFBlockFirst {
 
         snprintf(s, sizeof(s), "%s%s", prefix, "0.");
         conv_0.setup_weight_names(s);
-
         snprintf(s, sizeof(s), "%s%s", prefix, "1.");
         conv_1.setup_weight_names(s);                
     }
@@ -247,7 +199,6 @@ struct IFBlockLast {
 
         snprintf(s, sizeof(s), "%s%s", prefix, "0.");
         conv_0.setup_weight_names(s);
-
         snprintf(s, sizeof(s), "%s%s", prefix, "1.");
         shuf.setup_weight_names(s);                
     }
@@ -339,22 +290,14 @@ struct IFBlock {
         for (int i = 0; i < 8; i++) {
             feat = convblocks[i].forward(ctx, feat);
         }
-        // feat = convblocks[0].forward(ctx, feat);
-        // feat = convblocks[1].forward(ctx, feat);
-        // feat = convblocks[2].forward(ctx, feat);
-        // feat = convblocks[3].forward(ctx, feat);
-        // feat = convblocks[4].forward(ctx, feat);
-        // feat = convblocks[5].forward(ctx, feat);
-        // feat = convblocks[6].forward(ctx, feat);
-        // feat = convblocks[7].forward(ctx, feat);
 
         feat = lastconv.forward(ctx, feat);
         feat = resize(ctx, feat, scale);
         // # tensor [feat] size: [1, 6, 1056, 1056], min: -10.310724, max: 2.952527, mean: -0.450135
 
-        flow = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 0, 4, 1/*step*/);
+        flow = ggml_nn_slice(ctx, feat, 2 /*dim on C*/, 0, 4, 1/*step*/);
         flow = ggml_scale(ctx, flow, scale);
-        mask = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 4, 5, 1/*step*/);
+        mask = ggml_nn_slice(ctx, feat, 2 /*dim on C*/, 4, 5, 1/*step*/);
 
         flow_mask_list.push_back(flow);
         flow_mask_list.push_back(mask);
@@ -368,7 +311,6 @@ struct IFNet : GGMLNetwork {
     int MAX_W = 2048;
     int MAX_TIMES = 32;
 
-    // network params
     struct IFBlock block0;
     struct IFBlock block1;
     struct IFBlock block2;
@@ -377,12 +319,6 @@ struct IFNet : GGMLNetwork {
     struct Head encode;
 
     void create_weight_tensors(struct ggml_context* ctx) {
-        // self.block0 = IFBlock(7 + 16, c=192)
-        // self.block1 = IFBlock(8 + 4 + 16, c=128)
-        // self.block2 = IFBlock(8 + 4 + 16, c=96)
-        // self.block3 = IFBlock(8 + 4 + 16, c=64)
-        // self.encode = Head()
-
         block0.in_planes = 7 + 16;
         block0.c = 192;
         block0.create_weight_tensors(ctx);
@@ -455,8 +391,6 @@ struct IFNet : GGMLNetwork {
         // # vg.size() -- [1, 1, 1056, 1056]
 
         // grid = torch.cat([hg, vg], dim=1)
-
-
         ggml_tensor_t* x = ggml_grid_mesh(ctx, B, H, W, 1/*norm*/);
         x = ggml_scale(ctx, x, 2.0);
         x = ggml_add_constant(ctx, x, -1.0);
@@ -465,24 +399,12 @@ struct IFNet : GGMLNetwork {
         return x;
     }
 
-    // def warp(x, flow, grid):
-    //     B, C, H, W = x.size()
-    //     flow = torch.cat(
-    //         [flow[:, 0:1, :, :] / ((W - 1.0) / 2.0), 
-    //         flow[:, 1:2, :, :] / ((H - 1.0) / 2.0)], dim=1)
-
-    //     g = grid + flow
-    //     # tensor [g1] size: [1, 2, 1056, 1056], min: -1.000077, max: 1.002129, mean: -0.000346
-    //     g = g.permute(0, 2, 3, 1) #  [1, 2, 1056, 1056] --> [1, 1056, 1056, 2]
-    //     # tensor [g2] size: [1, 1056, 1056, 2], min: -1.000077, max: 1.002129, mean: -0.000346
-
-    //     return F.grid_sample(input=x, grid=g, mode="bilinear", padding_mode="border", align_corners=True)
     ggml_tensor_t* warp(struct ggml_context* ctx, ggml_tensor_t *feat, ggml_tensor_t *flow, ggml_tensor_t *grid) {
         int W = (int)feat->ne[0];
         int H = (int)feat->ne[1];
 
-        ggml_tensor_t *flow_x = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 0, 1, 1/*step*/);
-        ggml_tensor_t *flow_y = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 1, 2, 1/*step*/);
+        ggml_tensor_t *flow_x = ggml_nn_slice(ctx, flow, 2/*dim on C*/, 0, 1, 1/*step*/);
+        ggml_tensor_t *flow_y = ggml_nn_slice(ctx, flow, 2/*dim on C*/, 1, 2, 1/*step*/);
         flow_x = ggml_scale(ctx, flow_x, 2.0f/(W - 1.0));
         flow_y = ggml_scale(ctx, flow_y, 2.0f/(H - 1.0));
         flow = ggml_concat(ctx, flow_x, flow_y, 2/*dim*/);
@@ -503,7 +425,6 @@ struct IFNet : GGMLNetwork {
         I2 = argv[1];
         timestep = argv[2];
 
-        // B2, C2, H2, W2 = x.size()
         int W2 = (int)I1->ne[0];
         int H2 = (int)I1->ne[1];
         int C2 = (int)I1->ne[2];
@@ -512,31 +433,9 @@ struct IFNet : GGMLNetwork {
         I1 = resize_pad(ctx, I1);
         I2 = resize_pad(ctx, I2);
         timestep = resize_pad(ctx, timestep);
-
-        {
-            I1 = ggml_cont(ctx, I1);
-            ggml_set_name(I1, "I1");
-            ggml_set_output(I1);
-
-            I2 = ggml_cont(ctx, I2);
-            ggml_set_name(I2, "I2");
-            ggml_set_output(I2);
-
-            timestep = ggml_cont(ctx, timestep);
-            ggml_set_name(timestep, "timestep");
-            ggml_set_output(timestep);
-
-            // Info: ********************** I1 Tensor: 1x3x1024x1024
-            // min: 0.0000, max: 1.0000, mean: 0.4839
-            // Info: ********************** I2 Tensor: 1x3x1024x1024
-            // min: 0.0000, max: 1.0000, mean: 0.4844
-            // Info: ********************** timestep Tensor: 1x1x1024x1024
-            // min: 0.5000, max: 0.5000, mean: 0.5000
-
-            // tensor [I1] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.483912
-            // tensor [I2] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.484398
-            // tensor [timestep] size: [1, 1, 1024, 1024], min: 0.5, max: 0.5, mean: 0.5
-        }
+        // tensor [I1] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.483912
+        // tensor [I2] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.484398
+        // tensor [timestep] size: [1, 1, 1024, 1024], min: 0.5, max: 0.5, mean: 0.5
 
         int W = (int)I1->ne[0];
         int H = (int)I1->ne[1];
@@ -544,90 +443,27 @@ struct IFNet : GGMLNetwork {
         int B = (int)I1->ne[3];
 
         ggml_tensor_t *F1, *F2, *xx, *flow, *mask, *W_F1, *W_F2, *W_I1, *W_I2;
-        // F1 = self.encode(I1)
-        // F2 = self.encode(I2)
-        // # tensor [F1] size: [1, 8, 544, 992], min: -2.179624, max: 1.404768, mean: -0.036805
         F1 = encode.forward(ctx, I1);
         F2 = encode.forward(ctx, I2);
-        {
-            F1 = ggml_cont(ctx, F1);
-            ggml_set_name(F1, "F1");
-            ggml_set_output(F1);
-
-            F2 = ggml_cont(ctx, F2);
-            ggml_set_name(F2, "F2");
-            ggml_set_output(F2);
-
-            // Info: ********************** F1 Tensor: 1x8x1024x1024
-            // min: -2.5416, max: 2.1924, mean: -0.0849
-            // Info: ********************** F2 Tensor: 1x8x1024x1024
-            // min: -2.5416, max: 2.1924, mean: -0.0752
-
-            // tensor [F1] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.084768
-            // tensor [F2] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.075074
-        }
+        // tensor [F1] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.084768
+        // tensor [F2] size: [1, 8, 1024, 1024], min: -2.54316, max: 2.194751, mean: -0.075074
 
         xx = ggml_cat(ctx, 5, I1, I2, F1, F2, timestep, 2/*dim on channel*/);
-        {
-            xx = ggml_cont(ctx, xx);
-            ggml_set_name(xx, "xx");
-            ggml_set_output(xx);
-
-            // Info: ********************** xx Tensor: 1x23x1024x1024
-            // min: -2.5416, max: 2.1924, mean: 0.0924
-
-            // tensor [xx] size: [1, 23, 1024, 1024], min: -2.54316, max: 2.194751, mean: 0.092443
-        }
+        // tensor [xx] size: [1, 23, 1024, 1024], min: -2.54316, max: 2.194751, mean: 0.092443
 
         // flow, mask = self.block0.forward(xx, None, scale=scale_list[0])
         flow_mask_list = block0.forward(ctx, xx, NULL /*flow*/, scale_list[0]);
         flow = flow_mask_list[0];
         mask = flow_mask_list[1];
-        {
-            flow = ggml_cont(ctx, flow);
-            ggml_set_name(flow, "flow");
-            ggml_set_output(flow);
-
-            // mask = ggml_cont(ctx, mask);
-            // ggml_set_name(mask, "mask");
-            // ggml_set_output(mask);            
-
-            // Info: ********************** flow Tensor: 1x4x1024x1024
-            // min: -10.2746, max: 10.6259, mean: 0.0037
-
-            // tensor [flow] size: [1, 4, 1024, 1024], min: -10.025298, max: 11.566859, mean: 0.010115
-            // tensor [mask] size: [1, 1, 1024, 1024], min: -1.444131, max: 1.61599, mean: 0.053681
-        }
+        // tensor [flow] size: [1, 4, 1024, 1024], min: -10.025298, max: 11.566859, mean: 0.010115
+        // tensor [mask] size: [1, 1, 1024, 1024], min: -1.444131, max: 1.61599, mean: 0.053681
 
         W_I1 = I1;
         W_I2 = I2;
         ggml_tensor_t *grid = make_grid(ctx, B, H, W);
-        {
-            grid = ggml_cont(ctx, grid);
-            ggml_set_name(grid, "grid");
-            ggml_set_output(grid);
+        // tensor [grid] size: [1, 2, 1024, 1024], min: -1.0, max: 1.0, mean: 0.0
 
-            // Info: ********************** grid Tensor: 1x2x1024x1024
-            // min: -1.0000, max: 0.9980, mean: -0.0010
-
-            // tensor [grid] size: [1, 2, 1024, 1024], min: -1.0, max: 1.0, mean: 0.0
-        }
-
-        // ggml_tensor_dump("--->grid", grid);
-        // grid    f32 [1024, 1024, 2, 1],  (permuted) (cont)
-
-        // for i, block in enumerate(self.blocks):  # self.block1, self.block2, self.block3
-        //     W_F1 = warp(F1, flow[:, 0:2], grid)
-        //     W_F2 = warp(F2, flow[:, 2:4], grid)
-        //     xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1)
-
-        //     fd, mask = block(xx, flow, scale=scale_list[i + 1])
-        //     flow = flow + fd
-
-        //     W_I1 = warp(I1, flow[:, 0:2], grid)
-        //     W_I2 = warp(I2, flow[:, 2:4], grid)
         struct IFBlock *blocks[] = { &block1, &block2, &block1 };
-
         ggml_tensor_t *flow1, *flow2, *fd;
         for (int i = 0; i < 3; i++) {
             flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
@@ -635,13 +471,6 @@ struct IFNet : GGMLNetwork {
 
             W_F1 = warp(ctx, F1, flow1, grid);
             W_F2 = warp(ctx, F2, flow2, grid);
-
-            // ggml_tensor_dump("==> W_I1", W_I1);
-            // ggml_tensor_dump("==> W_I2", W_I2);
-            // ggml_tensor_dump("==> W_F1", W_F1);
-            // ggml_tensor_dump("==> W_F2", W_F2);
-            // ggml_tensor_dump("==> timestep", timestep);
-            // ggml_tensor_dump("==> mask", mask);
 
             xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
 
@@ -655,54 +484,26 @@ struct IFNet : GGMLNetwork {
             W_I1 = warp(ctx, I1, flow1, grid);
             W_I2 = warp(ctx, I2, flow2, grid);
         }
+        // tensor [W_I1] size: [1, 3, 1024, 1024], min: 2.8e-05, max: 1.0, mean: 0.483843
+        // tensor [W_I2] size: [1, 3, 1024, 1024], min: 3.4e-05, max: 1.0, mean: 0.484579
 
-        // ------------------------------
         ggml_tensor_t *one_mask;
         {
             mask = ggml_sigmoid(ctx, mask);
             one_mask = ggml_dup(ctx, mask);
             one_mask = ggml_constant(ctx, one_mask, 1.0);
             one_mask = ggml_sub(ctx, one_mask, mask);
-        }
-
-        {
-            mask = ggml_cont(ctx, mask);
-            ggml_set_name(mask, "mask");
-            ggml_set_output(mask);  
-
-            W_I1 = ggml_cont(ctx, W_I1);
-            ggml_set_name(W_I1, "W_I1");
-            ggml_set_output(W_I1);
-
-            W_I2 = ggml_cont(ctx, W_I2);
-            ggml_set_name(W_I2, "W_I2");
-            ggml_set_output(W_I2);
-
-
-            // Info: ********************** W_I1 Tensor: 1x3x1024x1024
-            // min: 0.0099, max: 1.0000, mean: 0.4838
-            // Info: ********************** W_I2 Tensor: 1x3x1024x1024
-            // min: 0.0116, max: 1.0000, mean: 0.4846
-
-            // Info: ********************** mask Tensor: 1x1x1024x1024
-            // min: 0.0150, max: 0.9947, mean: 0.5111
-
-            // tensor [W_I1] size: [1, 3, 1024, 1024], min: 2.8e-05, max: 1.0, mean: 0.483843
-            // tensor [W_I2] size: [1, 3, 1024, 1024], min: 3.4e-05, max: 1.0, mean: 0.484579
             // tensor [mask] size: [1, 1, 1024, 1024], min: 1.5e-05, max: 1.0, mean: 0.546369
         }
 
         // middle = W_I1 * mask + W_I2 * (1.0 - mask)
         ggml_tensor_t *middle;
         middle = ggml_add(ctx, ggml_mul(ctx, W_I1, mask), ggml_mul(ctx, W_I2, one_mask));
-        {
-            middle = ggml_cont(ctx, middle);
-            ggml_set_name(middle, "middle");
-            ggml_set_output(middle);                      
+        // tensor [middle] size: [1, 3, 1024, 1024], min: 6.9e-05, max: 1.0, mean: 0.484024
 
-            // Info: -------------- output_tensor Tensor: 1x3x1024x1024
-            // min: 0.0107, max: 1.0000, mean: 0.4841
-            // tensor [middle] size: [1, 3, 1024, 1024], min: 6.9e-05, max: 1.0, mean: 0.484024
+        if (middle->ne[0] != W2 || middle->ne[1] != H2) {
+            middle = ggml_nn_slice(ctx, middle, 0, 0, W2, 1/*step*/);
+            middle = ggml_nn_slice(ctx, middle, 1, 0, H2, 1/*step*/);
         }
 
       	return middle;
@@ -717,9 +518,9 @@ struct VideoSlowNetwork {
         // -----------------------------------------------------------------------------------------
         net.set_device(device);
         net.start_engine();
-        net.dump();
+        // net.dump();
 
-        check_point(model.preload("models/video_slow_f32.gguf") == RET_OK);
+        check_point(model.preload("models/video_slow_f16.gguf") == RET_OK);
 
         return RET_OK;
     }

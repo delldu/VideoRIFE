@@ -255,7 +255,6 @@ void GGMLNetwork::stop_engine()
         }
 
         memset((void*)eng, 0, sizeof(GGMLEngine));
-        CheckPoint();
     }
     // system("nvidia-smi");
 }
