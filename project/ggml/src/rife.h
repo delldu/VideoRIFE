@@ -3,6 +3,8 @@
 #include "ggml_engine.h"
 #include "ggml_nn.h"
 
+#include <vector>
+
 #pragma GCC diagnostic ignored "-Wformat-truncation"
 
 
@@ -60,9 +62,10 @@ struct Head {
     struct Conv2d cnn0;  // torch.float32, [32, 3, 3, 3] 
     struct Conv2d cnn1;  // torch.float32, [32, 32, 3, 3] 
     struct Conv2d cnn2;  // torch.float32, [32, 32, 3, 3] 
-    struct Conv2d cnn3;  // torch.float32, [32, 8, 4, 4] 
+    struct ConvTranspose2d cnn3;  // torch.float32, [32, 8, 4, 4] 
 
     void create_weight_tensors(struct ggml_context* ctx) {
+        // self.cnn0 = nn.Conv2d(3, 32, 3, 2, 1)
         cnn0.in_channels = 3;
         cnn0.out_channels = 32;
         cnn0.kernel_size = {3, 3};
@@ -70,6 +73,7 @@ struct Head {
         cnn0.padding = { 1, 1 };
         cnn0.create_weight_tensors(ctx);
 
+        // self.cnn1 = nn.Conv2d(32, 32, 3, 1, 1)
         cnn1.in_channels = 32;
         cnn1.out_channels = 32;
         cnn1.kernel_size = {3, 3};
@@ -77,6 +81,7 @@ struct Head {
         cnn1.padding = { 1, 1 };
         cnn1.create_weight_tensors(ctx);
 
+        // self.cnn2 = nn.Conv2d(32, 32, 3, 1, 1)
         cnn2.in_channels = 32;
         cnn2.out_channels = 32;
         cnn2.kernel_size = {3, 3};
@@ -84,12 +89,13 @@ struct Head {
         cnn2.padding = { 1, 1 };
         cnn2.create_weight_tensors(ctx);
 
+        // (cnn3): ConvTranspose2d(32, 8, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
         cnn3.in_channels = 32;
         cnn3.out_channels = 8;
-        cnn3.kernel_size = {4, 4};
-        cnn3.stride = { 2, 2 };
-        cnn3.padding = { 1, 1 };
-        cnn3.is_depthwise = true;
+        cnn3.kernel_size = 4;
+        cnn3.stride = 2;
+        cnn3.padding = 1;
+        cnn3.output_padding = 1;
         cnn3.create_weight_tensors(ctx);
     }
 
@@ -116,6 +122,18 @@ struct Head {
       // x3 = self.cnn3(x)
       // return x3
 
+      // self.relu = nn.LeakyReLU(0.2, True)
+
+      x = cnn0.forward(ctx, x);
+      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+
+      x = cnn1.forward(ctx, x);
+      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+
+      x = cnn2.forward(ctx, x);
+      x = ggml_leaky_relu(ctx, x, 0.2, false /*inplace*/);
+
+      x = cnn3.forward(ctx, x);
 
     	return x;
     }
@@ -170,27 +188,6 @@ struct ResConv {
 };
 
 
-// def __init__(self, in_planes, c=64):
-//     super().__init__()
-//     self.conv0 = nn.Sequential(
-//         conv(in_planes, c // 2, 3, 2, 1),
-//         conv(c // 2, c, 3, 2, 1),
-//     )
-//     self.convblock = nn.Sequential(
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//         ResConv(c),
-//     )
-//     self.lastconv = nn.Sequential(
-//         nn.ConvTranspose2d(c, 4 * 6, 4, 2, 1), 
-//         nn.PixelShuffle(2),
-//     )
-
 struct IFBlockFirst {
     int in_planes;
     int c;
@@ -225,24 +222,18 @@ struct IFBlockFirst {
     }
 };
 
-// self.lastconv = nn.Sequential(
-//     nn.ConvTranspose2d(c, 4 * 6, 4, 2, 1), 
-//     nn.PixelShuffle(2),
-// )
-
 struct IFBlockLast {
     int c;
 
-    struct Conv2d conv_0;
+    struct ConvTranspose2d conv_0;
     struct PixelShuffle shuf;
 
     void create_weight_tensors(struct ggml_context* ctx) {
         conv_0.in_channels = c;
         conv_0.out_channels = 4*6;
-        conv_0.kernel_size = {4, 4};
-        conv_0.stride = { 2, 2 };
-        conv_0.padding = { 1, 1 };
-        conv_0.is_depthwise = true;
+        conv_0.kernel_size = 4;
+        conv_0.stride = 2;
+        conv_0.padding = 1;
         conv_0.create_weight_tensors(ctx);
 
         shuf.upscale_factor = 2;
@@ -315,7 +306,7 @@ struct IFBlock {
         return x;
     }
 
-    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, ggml_tensor_t* flow, float scale) {
+    std::vector<ggml_tensor_t *> forward(struct ggml_context* ctx, ggml_tensor_t* x, ggml_tensor_t* start_flow, float scale) {
         // x = resize(x, 1.0 / scale)
 
         // """flow is not None"""
@@ -330,59 +321,44 @@ struct IFBlock {
         // flow = feat[:, 0:4] * scale
         // mask = feat[:, 4:5]
         // return flow, mask
+        CheckPoint("scale = %.4f", scale);
+        ggml_tensor_dump("x", x);
+
+        std::vector<ggml_tensor_t *> flow_mask_list;
         if (scale > 1.0) {
             x = resize(ctx, x, 1.0/scale);
         }
-        if (flow != NULL) {
-            if (scale > 1.0) {
-                flow = resize(ctx, flow, 1.0/scale);
-                flow = ggml_scale(ctx, flow, 1.0/scale);
-            }
-            x = ggml_concat(ctx, x, flow, 2/*dim on channel*/);
-        }
-        ggml_tensor_t *feat;
-        feat = conv0.forward(ctx, x);
-        for (int i = 0; i < 8; i++) {
-            feat = convblocks[i].forward(ctx, x);
-        }
-        feat = lastconv.forward(ctx, x);
+        if (start_flow != NULL) {
+            ggml_tensor_dump("start_flow", start_flow);
 
-      	return feat;
+            start_flow = resize(ctx, start_flow, 1.0/scale);
+            start_flow = ggml_scale(ctx, start_flow, 1.0/scale); // xxxx_debug
+            x = ggml_concat(ctx, x, start_flow, 2/*dim on channel*/);
+        }
+        ggml_tensor_t *feat, *flow, *mask;
+
+        feat = conv0.forward(ctx, x);
+        ggml_tensor_dump("feat", feat);
+
+        for (int i = 0; i < 8; i++) {
+            feat = convblocks[i].forward(ctx, feat);
+        }
+        feat = lastconv.forward(ctx, feat);
+        feat = resize(ctx, feat, scale);
+        ggml_tensor_dump("====================> lastconv", feat);
+
+        flow = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 0, 4, 1/*step*/);
+        // flow = ggml_scale(ctx, flow, scale); // xxxx_debug
+        mask = ggml_nn_slice(ctx, feat, 2 /*dim on channel*/, 4, 5, 1/*step*/);
+
+        flow_mask_list.push_back(flow);
+        flow_mask_list.push_back(mask);
+
+      	return flow_mask_list;
     }
 };
 
-// def make_grid(B: int, H: int, W: int):
-//     hg = torch.linspace(-1.0, 1.0, W).view(1, 1, 1, W).expand(B, -1, H, -1)
-//     vg = torch.linspace(-1.0, 1.0, H).view(1, 1, H, 1).expand(B, -1, -1, W)
-//     # hg.size() -- [1, 1, 1056, 1056]
-//     # vg.size() -- [1, 1, 1056, 1056]
-
-//     grid = torch.cat([hg, vg], dim=1)
-//     # tensor [grid] size: [1, 2, 1056, 1056], min: -1.0, max: 1.0, mean: -0.0
-
-//     return grid
-
-
-
-// def warp(x, flow, grid):
-//     B, C, H, W = x.size()
-//     flow = torch.cat(
-//         [flow[:, 0:1, :, :] / ((W - 1.0) / 2.0), 
-//         flow[:, 1:2, :, :] / ((H - 1.0) / 2.0)], dim=1)
-
-//     g = grid + flow
-//     # tensor [g1] size: [1, 2, 1056, 1056], min: -1.000077, max: 1.002129, mean: -0.000346
-//     g = g.permute(0, 2, 3, 1) #  [1, 2, 1056, 1056] --> [1, 1056, 1056, 2]
-//     # tensor [g2] size: [1, 1056, 1056, 2], min: -1.000077, max: 1.002129, mean: -0.000346
-
-//     return F.grid_sample(input=x, grid=g, mode="bilinear", padding_mode="border", align_corners=True)
-
-//     # # onnx support
-//     # return grid_sample(x, g)
-
-
 struct IFNet : GGMLNetwork {
-    // network hparams
     int MAX_H = 2048;
     int MAX_W = 2048;
     int MAX_TIMES = 32;
@@ -471,122 +447,170 @@ struct IFNet : GGMLNetwork {
         ggml_tensor_t* x = ggml_grid_mesh(ctx, B, H, W, 1/*norm*/);
         x = ggml_permute(ctx, x, 2, 0, 1, 3); // [2, W, H, B] -> [W, H, 2, B]
         x = ggml_cont(ctx, x);
+
+        ggml_tensor_dump("make_grid", x);
+
         return x;
     }
 
-    ggml_tensor_t* warp(struct ggml_context* ctx, ggml_tensor_t *feat, ggml_tensor_t *flow, ggml_tensor_t *grid) {
-        ggml_tensor_t *g = grid;
+    // def warp(x, flow, grid):
+    //     B, C, H, W = x.size()
+    //     flow = torch.cat(
+    //         [flow[:, 0:1, :, :] / ((W - 1.0) / 2.0), 
+    //         flow[:, 1:2, :, :] / ((H - 1.0) / 2.0)], dim=1)
 
-        return ggml_grid_sample(ctx, flow, g);
+    //     g = grid + flow
+    //     # tensor [g1] size: [1, 2, 1056, 1056], min: -1.000077, max: 1.002129, mean: -0.000346
+    //     g = g.permute(0, 2, 3, 1) #  [1, 2, 1056, 1056] --> [1, 1056, 1056, 2]
+    //     # tensor [g2] size: [1, 1056, 1056, 2], min: -1.000077, max: 1.002129, mean: -0.000346
+
+    //     return F.grid_sample(input=x, grid=g, mode="bilinear", padding_mode="border", align_corners=True)
+    ggml_tensor_t* warp(struct ggml_context* ctx, ggml_tensor_t *feat, ggml_tensor_t *flow, ggml_tensor_t *grid) {
+        int W = (int)feat->ne[0];
+        int H = (int)feat->ne[1];
+
+        ggml_tensor_t *flow_x = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 0, 1, 1/*step*/);
+        ggml_tensor_t *flow_y = ggml_nn_slice(ctx, flow, 2/*dim on channel*/, 1, 2, 1/*step*/);
+        // flow_x = ggml_scale(ctx, flow_x, 2.0f/(W - 1.0)); // xxxx_debug
+        // flow_y = ggml_scale(ctx, flow_y, 2.0f/(H - 1.0));
+        flow = ggml_concat(ctx, flow_x, flow_y, 2/*dim*/);
+
+        ggml_tensor_t *g = ggml_add(ctx, grid, flow);
+        ggml_tensor_dump("grid1", g);
+        g = ggml_permute(ctx, g, 1, 2, 0, 3); // [W, H, 2, B] -> [2, W, H, B]
+        ggml_tensor_dump("grid2", g);
+
+        return ggml_grid_sample(ctx, feat, g);
     }
 
     ggml_tensor_t* forward(ggml_context_t* ctx, int argc, ggml_tensor_t* argv[]) {
-        ggml_tensor_t *x, *image1, *image2, *timestep;
+        float scale_list[4] = {8.0, 4.0, 2.0, 1.0 };
+        ggml_tensor_t *I1, *I2, *timestep;
+        std::vector<ggml_tensor_t *>flow_mask_list;
 
         GGML_UNUSED(argc);
-        x = argv[0];
-        timestep = argv[1];
+        I1 = argv[0];
+        I2 = argv[1];
+        timestep = argv[2];
+
+        ggml_tensor_dump("I1", I1);
+        ggml_tensor_dump("I2", I2);
+        ggml_tensor_dump("timestep1", timestep);
 
         // B2, C2, H2, W2 = x.size()
-        int W2 = (int)x->ne[0];
-        int H2 = (int)x->ne[1];
-        int C2 = (int)x->ne[2];
-        int B2 = (int)x->ne[3];
+        int W2 = (int)I1->ne[0];
+        int H2 = (int)I1->ne[1];
+        int C2 = (int)I1->ne[2];
+        int B2 = (int)I1->ne[3];
 
-        x = resize_pad(ctx, x);
+        I1 = resize_pad(ctx, I1);
+        I2 = resize_pad(ctx, I2);
         timestep = resize_pad(ctx, timestep);
 
-        int W = (int)x->ne[0];
-        int H = (int)x->ne[1];
-        int C = (int)x->ne[2];
-        int B = (int)x->ne[3];
+        ggml_tensor_dump("I1", I1);
+        ggml_tensor_dump("I2", I2);
+        ggml_tensor_dump("timestep", timestep);
+
+        int W = (int)I1->ne[0];
+        int H = (int)I1->ne[1];
+        int C = (int)I1->ne[2];
+        int B = (int)I1->ne[3];
 
         // tensor [x] size: [1, 6, 544, 992], min: 0.0, max: 1.0, mean: 0.148846
-        ggml_tensor_t *I1 = ggml_nn_slice(ctx, x, 2/*channl*/, 0, 3, 1/*step*/);
-        ggml_tensor_t *I2 = ggml_nn_slice(ctx, x, 2/*channl*/, 3, 6, 1/*step*/);
+        ggml_tensor_t *F1, *F2, *xx, *flow, *mask, *W_F1, *W_F2, *W_I1, *W_I2;
 
-        float scale_list[4] = {8.0, 4.0, 2.0, 1.0 };
-        // # tensor [F1] size: [1, 8, 544, 992], min: -2.179624, max: 1.404768, mean: -0.036805
 
         // F1 = self.encode(I1)
         // F2 = self.encode(I2)
-        ggml_tensor_t *F1 = encode.forward(ctx, I1);
-        ggml_tensor_t *F2 = encode.forward(ctx, I2);
-        ggml_tensor_t *xx = ggml_cat(ctx, 5, I1, I2, F1, F2, timestep, 2/*dim on channel*/);
+        // # tensor [F1] size: [1, 8, 544, 992], min: -2.179624, max: 1.404768, mean: -0.036805
+        F1 = encode.forward(ctx, I1);
+        F2 = encode.forward(ctx, I2);
+        ggml_tensor_dump("F1", F1);
+        ggml_tensor_dump("F2", F2);
+
+        xx = ggml_cat(ctx, 5, I1, I2, F1, F2, timestep, 2/*dim on channel*/);
         // # tensor [xx] size: [1, 23, 544, 992], min: -2.179624, max: 1.404768, mean: 0.035861
+        ggml_tensor_dump("xx", xx);
 
         // flow, mask = self.block0.forward(xx, None, scale=scale_list[0])
-        ggml_tensor_t *feat = block0.forward(ctx, xx, NULL /*flow*/, scale_list[0]);
-        // #     flow = feat[:, 0:4] * scale
-        // #     mask = feat[:, 4:5]
-        ggml_tensor_t *flow = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 0, 4, 1/*step*/);
-        ggml_tensor_t *mask = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 4, 5, 1/*step*/);
+        flow_mask_list = block0.forward(ctx, xx, NULL /*flow*/, scale_list[0]);
+        flow = flow_mask_list[0];
+        mask = flow_mask_list[1];
+        ggml_tensor_dump("flow", flow);
+        ggml_tensor_dump("mask", mask);
 
-        ggml_tensor_t *W_I1 = I1;
-        ggml_tensor_t *W_I2 = I2;
+
+        W_I1 = I1;
+        W_I2 = I2;
         ggml_tensor_t *grid = make_grid(ctx, B, H, W);
+        ggml_tensor_dump("--->grid", grid);
+        // grid    f32 [1024, 1024, 2, 1],  (permuted) (cont)
+
+        // for i, block in enumerate(self.blocks):  # self.block1, self.block2, self.block3
+        //     W_F1 = warp(F1, flow[:, 0:2], grid)
+        //     W_F2 = warp(F2, flow[:, 2:4], grid)
+        //     xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1)
+
+        //     fd, mask = block(xx, flow, scale=scale_list[i + 1])
+        //     flow = flow + fd
+
+        //     W_I1 = warp(I1, flow[:, 0:2], grid)
+        //     W_I2 = warp(I2, flow[:, 2:4], grid)
+        struct IFBlock *blocks[] = { &block1, &block2, &block1 };
 
         ggml_tensor_t *flow1, *flow2, *fd;
+        for (int i = 0; i < 3; i++) {
+            flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
+            flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
 
-        // block1
-        flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
-        flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
-        ggml_tensor_t *W_F1 = warp(ctx, F1, flow1, grid);
-        ggml_tensor_t *W_F2 = warp(ctx, F2, flow2, grid);
-        // xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1);
-        xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
+            ggml_tensor_dump("==> flow1", flow1);
+            ggml_tensor_dump("==> flow2", flow2);
 
-        feat = block1.forward(ctx, xx, flow, scale_list[1]);
-        fd = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 0, 4, 1/*step*/);
-        mask = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 4, 5, 1/*step*/);
-        flow = ggml_add(ctx, flow, fd);
+            W_F1 = warp(ctx, F1, flow1, grid);
+            W_F2 = warp(ctx, F2, flow2, grid);
 
-        flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
-        flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
-        W_I1 = warp(ctx, I1, flow1, grid);
-        W_I2 = warp(ctx, I2, flow2, grid);
+            ggml_tensor_dump("==> W_I1", W_I1);
+            ggml_tensor_dump("==> W_I2", W_I2);
+            ggml_tensor_dump("==> W_F1", W_F1);
+            ggml_tensor_dump("==> W_F2", W_F2);
+            ggml_tensor_dump("==> timestep", timestep);
+            ggml_tensor_dump("==> mask", mask);
 
-        // block2
-        W_F1 = warp(ctx, F1, flow1, grid);
-        W_F2 = warp(ctx, F2, flow2, grid);
-        // xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1);
-        xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
+            xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
+            ggml_tensor_dump("==> xx", xx);
 
-        feat = block2.forward(ctx, xx, flow, scale_list[2]);
-        fd = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 0, 4, 1/*step*/);
-        mask = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 4, 5, 1/*step*/);
-        flow = ggml_add(ctx, flow, fd);
+            flow_mask_list = blocks[i]->forward(ctx, xx, flow, scale_list[i + 1]);
+            fd = flow_mask_list[0];
+            mask = flow_mask_list[1];
+            flow = ggml_add(ctx, flow, fd);
+            ggml_tensor_dump("==> fd", fd);
 
-        flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
-        flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
-        W_I1 = warp(ctx, I1, flow1, grid);
-        W_I2 = warp(ctx, I2, flow2, grid);
+            flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
+            flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
+            W_I1 = warp(ctx, I1, flow1, grid);
+            W_I2 = warp(ctx, I2, flow2, grid);
 
-        // block3
-        W_F1 = warp(ctx, F1, flow1, grid);
-        W_F2 = warp(ctx, F2, flow2, grid);
-        // xx = torch.cat((W_I1, W_I2, W_F1, W_F2, timestep, mask), dim=1);
-        xx = ggml_cat(ctx, 6, W_I1, W_I2, W_F1, W_F2, timestep, mask, 2/*dim*/);
-
-        feat = block3.forward(ctx, xx, flow, scale_list[3]);
-        fd = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 0, 4, 1/*step*/);
-        mask = ggml_nn_slice(ctx, feat, 2/*dim on channel*/, 4, 5, 1/*step*/);
-        flow = ggml_add(ctx, flow, fd);
-
-        flow1 = ggml_nn_slice(ctx, flow, 2/*dim*/, 0, 2, 1/*step*/);
-        flow2 = ggml_nn_slice(ctx, flow, 2/*dim*/, 2, 4, 1/*step*/);
-        W_I1 = warp(ctx, I1, flow1, grid);
-        W_I2 = warp(ctx, I2, flow2, grid);
+            ggml_tensor_dump("==> W_I1", W_I1);
+            ggml_tensor_dump("==> W_I2", W_I2);
+        }
 
         // ------------------------------
-        mask = ggml_sigmoid(ctx, mask);
-        ggml_tensor_t *one_mask = ggml_dup(ctx, mask);
-        one_mask = ggml_constant(ctx, one_mask, 1.0);
-        one_mask = ggml_sub(ctx, one_mask, mask);
+        ggml_tensor_t *one_mask;
+        {
+          mask = ggml_sigmoid(ctx, mask);
+          one_mask = ggml_dup(ctx, mask);
+          one_mask = ggml_constant(ctx, one_mask, 1.0);
+          one_mask = ggml_sub(ctx, one_mask, mask);
+        }
+
+        ggml_tensor_dump("==> W_I1", W_I1);
+        ggml_tensor_dump("==> W_I2", W_I2);
 
         // middle = W_I1 * mask + W_I2 * (1.0 - mask)
         ggml_tensor_t *middle;
         middle = ggml_add(ctx, ggml_mul(ctx, W_I1, mask), ggml_mul(ctx, W_I2, one_mask));
+
+        ggml_tensor_dump("==> middle", middle);
 
       	return middle;
     }
@@ -611,10 +635,11 @@ struct VideoSlowNetwork {
         return net.load_weight(&model, "");
     }
 
-    TENSOR *forward(TENSOR *input1_tensor, TENSOR *input2_tensor) {
-        TENSOR *argv[2];
+    TENSOR *forward(TENSOR *input1_tensor, TENSOR *input2_tensor, TENSOR *timestep) {
+        TENSOR *argv[3];
         argv[0] = input1_tensor ;
         argv[1] = input2_tensor ;
+        argv[2] = timestep ;
 
         load();
         return net.engine_forward(ARRAY_SIZE(argv), argv);

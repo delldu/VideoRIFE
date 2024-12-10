@@ -34,10 +34,15 @@ int video_slow_predict(VideoSlowNetwork *slow_net, char *input_file, char *secon
 
     // Blender input1_tensor & style_tensor
     {
-        output_tensor = slow_net->forward(input1_tensor, input2_tensor);
+        TENSOR *timestep = tensor_create(input1_tensor->batch, 1, input1_tensor->height, input1_tensor->width);
+        check_tensor(timestep);
+        tensor_clamp_(timestep, 0.5, 0.5);
+        
+        output_tensor = slow_net->forward(input1_tensor, input2_tensor, timestep);
         check_tensor(output_tensor);
         tensor_destroy(input2_tensor);
         tensor_destroy(input1_tensor);
+        tensor_destroy(timestep);
 
         tensor_show("-------------- output_tensor", output_tensor);
 

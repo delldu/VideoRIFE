@@ -635,7 +635,7 @@ ggml_tensor_t* ggml_nn_conv_transpose_2d(ggml_context_t* ctx, ggml_tensor_t* x, 
     // ==> -stride - 2*padding + kernel_size + output_padding;
     int pad_size = -stride - 2*padding + kernel_size + output_padding;
     if (pad_size > 0) {
-        x = ggml_pad(ctx, x, 0, 0, pad_size, pad_size);
+        x = ggml_pad(ctx, x, pad_size, pad_size, 0, 0); // W, H, C, B ...
     }
 
     return x;
